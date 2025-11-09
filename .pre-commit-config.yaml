@@ -1,0 +1,60 @@
+default_language_version:
+  python: python3.13
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        args:
+          - "--ignore-words-list=worl"
+          - "--skip=migrations,testproject,build,dist,*.map,package*.json"
+
+  - repo: https://github.com/pycqa/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        args:
+          - "--profile"
+          - "black"
+          - "--force-single-line"
+          - "--line-length=100"
+          - "--filter-files"
+        files: \.py$
+
+  - repo: https://github.com/psf/black
+    rev: 25.9.0
+    hooks:
+      - id: black
+        args:
+          - "--line-length=100"
+        language_version: python3.13
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        args:
+          - "--line-length=100"
+          - "--target-version=py313"
+          - "--exclude=migrations/*"
+          - "--exclude=testproject/*"
+          - "--fix"
+          - "--extend-select=E501"
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        args:
+          - "--ignore-missing-imports"
+        language_version: python3.13

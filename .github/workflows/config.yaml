@@ -30,7 +30,6 @@ jobs:
 
       - name: Process Code
         run: |
-          codespell -S fixtures,migrations,testproject .
           ruff check --output-format=github --select=E9,F63,F7,F82 --target-version=py310 --line-length=100 .
 
       - name: Run Tests

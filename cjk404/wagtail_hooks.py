@@ -33,6 +33,10 @@ class PageNotFoundEntryFilterSet(WagtailFilterSet):
         label="Last Viewed Date Range",
         widget=DateRangePickerWidget,
     )
+    created = DateTimeFromToRangeFilter(
+        label="Created Date Range",
+        widget=DateRangePickerWidget,
+    )
     redirect_to_url_present = BooleanFilter(
         label="Is Declared Redirect to URL?",
         method="filter_redirect_to_url_present",
@@ -158,6 +162,12 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
                     label="Last Viewed",
                     accessor="formatted_last_viewed",
                     sort_key="last_hit",
+                ),
+                Column(
+                    "formatted_created",
+                    label="Created Date",
+                    accessor="formatted_created",
+                    sort_key="created",
                 ),
             ]
         )

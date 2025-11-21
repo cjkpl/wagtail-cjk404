@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from typing import Iterable
 from typing import Optional
+from typing import Set
 from urllib.parse import urlsplit
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils import formats
@@ -141,9 +145,7 @@ class PageNotFoundEntry(models.Model):
             else:
                 link_url = path_with_suffix or "#"
 
-        admin_edit_url = reverse(
-            "wagtailadmin_pages:edit", args=[self.redirect_to_page.pk]
-        )
+        admin_edit_url = reverse("wagtailadmin_pages:edit", args=[self.redirect_to_page.pk])
 
         return format_html(
             (
@@ -165,6 +167,14 @@ class PageNotFoundEntry(models.Model):
             return "-"
 
         localized = timezone.localtime(self.last_hit)
+        date_str = formats.date_format(localized, "j F Y")
+        time_str = formats.time_format(localized, "H:i")
+        return f"{date_str} at {time_str}"
+
+    def formatted_created(self) -> str:
+        if not self.created:
+            return "-"
+        localized = timezone.localtime(self.created)
         date_str = formats.date_format(localized, "j F Y")
         time_str = formats.time_format(localized, "H:i")
         return f"{date_str} at {time_str}"
@@ -245,8 +255,48 @@ class PageNotFoundEntry(models.Model):
             label,
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.url} ---> {self.redirect_to}"
+
+    @staticmethod
+    def build_url_variants(url: str, *, append_slash: bool) -> Set[str]:
+        """Return URL variants that should be treated as equivalent.
+
+        When APPEND_SLASH is enabled Django will treat ``/foo`` and ``/foo/`` as
+        the same path, so we validate those as a single logical URL.
+        """
+        sanitized = url.strip()
+        variants: Set[str] = {sanitized}
+        if append_slash:
+            stripped = sanitized.rstrip("/")
+            if stripped:
+                variants.update({stripped, f"{stripped}/"})
+            elif sanitized:
+                variants.add(sanitized)
+        return variants
+
+    def _duplicate_urls_for_site(self) -> models.QuerySet["PageNotFoundEntry"]:
+        append_slash = bool(settings.APPEND_SLASH and not self.regular_expression)
+        candidate_urls = self.build_url_variants(self.url or "", append_slash=append_slash)
+
+        queryset = PageNotFoundEntry.objects.filter(site=self.site, url__in=candidate_urls)
+        if self.pk:
+            queryset = queryset.exclude(pk=self.pk)
+        return queryset
+
+    def validate_unique(self, exclude: Optional[Iterable[str]] = None) -> None:  # type: ignore[override]
+        super().validate_unique(exclude=exclude)
+        if not self.site_id or not self.url:
+            return
+
+        duplicates_exist = self._duplicate_urls_for_site().exists()
+        if duplicates_exist:
+            message = (
+                "A redirect for this URL already exists for the selected site."
+                " With APPEND_SLASH enabled, URLs that only differ by a trailing"
+                " slash are considered the same."
+            )
+            raise ValidationError({"url": message})
 
     class Meta:
         verbose_name = "redirect"

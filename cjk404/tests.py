@@ -1,12 +1,18 @@
-from django.test import TestCase
-from django.core.cache import cache
-from wagtail.models import Site, Page
-from typing import Union, Optional
+from typing import Optional
+from typing import Union
 
-from cjk404.middleware import (
-    DJANGO_REGEX_REDIRECTS_CACHE_KEY,
-    DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY,
-)
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.http import HttpResponse
+from django.test import RequestFactory
+from django.test import TestCase
+from django.test import override_settings
+from wagtail.models import Page
+from wagtail.models import Site
+
+from cjk404.middleware import DJANGO_REGEX_REDIRECTS_CACHE_KEY
+from cjk404.middleware import DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
+from cjk404.middleware import PageNotFoundRedirectMiddleware
 from cjk404.models import PageNotFoundEntry
 
 
@@ -17,6 +23,16 @@ class Cjk404RedirectTests(TestCase):
     def setUp(self):
         cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_KEY)
         cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY)
+        self.request_factory = RequestFactory()
+        self.root_page = Page.get_first_root_node()
+        if self.root_page is None:
+            self.root_page = Page.add_root(instance=Page(title="Root", slug="root"))
+        if not Site.objects.exists():
+            Site.objects.create(
+                hostname="testserver",
+                root_page=self.root_page,
+                is_default_site=True,
+            )
 
     def create_redirect(
         self,
@@ -109,18 +125,14 @@ class Cjk404RedirectTests(TestCase):
         self.assertEqual(pnfe.hits, 1)
 
     def test_regular_expression_with_replacement_302(self):
-        pnfe = self.create_redirect(
-            "/news01/index/(.*)/", "/news02/boo/$1/", None, False, True
-        )
+        pnfe = self.create_redirect("/news01/index/(.*)/", "/news02/boo/$1/", None, False, True)
         self.assertEqual(pnfe.hits, 0)
         self.redirect_url("/news01/index/b/", "/news02/boo/b/", 302, 404)
         pnfe.refresh_from_db()
         self.assertEqual(pnfe.hits, 1)
 
     def test_regular_expression_with_replacement_301(self):
-        pnfe = self.create_redirect(
-            "/news03/index/(.*)/", "/news04/boo/$1/", None, True, True
-        )
+        pnfe = self.create_redirect("/news03/index/(.*)/", "/news04/boo/$1/", None, True, True)
         self.assertEqual(pnfe.hits, 0)
         self.redirect_url("/news03/index/b/", "/news04/boo/b/", 301, 404)
         pnfe.refresh_from_db()
@@ -177,14 +189,10 @@ class Cjk404RedirectTests(TestCase):
         )
 
         response = self.client.get("/project/foo/")
-        self.assertRedirects(
-            response, "/my/project/foo/", status_code=302, target_status_code=404
-        )
+        self.assertRedirects(response, "/my/project/foo/", status_code=302, target_status_code=404)
 
         response = self.client.get("/project/bar/")
-        self.assertRedirects(
-            response, "/my/project/bar/", status_code=302, target_status_code=404
-        )
+        self.assertRedirects(response, "/my/project/bar/", status_code=302, target_status_code=404)
 
         response = self.client.get("/project/bar/details/")
         self.assertRedirects(
@@ -195,9 +203,7 @@ class Cjk404RedirectTests(TestCase):
         )
 
         response = self.client.get("/project/foobar/")
-        self.assertRedirects(
-            response, "/projects/", status_code=302, target_status_code=404
-        )
+        self.assertRedirects(response, "/projects/", status_code=302, target_status_code=404)
 
         response = self.client.get("/project/foo/details/")
         self.assertRedirects(
@@ -224,3 +230,89 @@ class Cjk404RedirectTests(TestCase):
             target_status_code=404,
             fetch_redirect_response=False,
         )
+
+
+class PageNotFoundEntryUniquenessTests(TestCase):
+    def setUp(self):
+        cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_KEY)
+        cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY)
+        self.request_factory = RequestFactory()
+        self.root_page = Page.get_first_root_node()
+        if self.root_page is None:
+            self.root_page = Page.add_root(instance=Page(title="Root", slug="root"))
+
+    def _create_site(self, hostname: str, *, is_default: bool = False) -> Site:
+        return Site.objects.create(
+            hostname=hostname,
+            root_page=self.root_page,
+            is_default_site=is_default,
+        )
+
+    def _create_entry(self, site: Site, url: str) -> PageNotFoundEntry:
+        return PageNotFoundEntry.objects.create(site=site, url=url)
+
+    @override_settings(APPEND_SLASH=False)
+    def test_duplicate_url_same_site_disallowed_without_append_slash(self):
+        site = self._create_site("site-one.test", is_default=True)
+        self._create_entry(site, "/foo/")
+
+        duplicate = PageNotFoundEntry(site=site, url="/foo/")
+        with self.assertRaises(ValidationError) as exc:
+            duplicate.full_clean()
+
+        self.assertIn("url", exc.exception.message_dict)
+        self.assertEqual(PageNotFoundEntry.objects.filter(site=site, url="/foo/").count(), 1)
+
+    @override_settings(APPEND_SLASH=True)
+    def test_trailing_slash_variants_conflict_when_append_slash_enabled(self):
+        site = self._create_site("append.test", is_default=True)
+        self._create_entry(site, "/scholarship-programme/")
+
+        second = PageNotFoundEntry(site=site, url="/scholarship-programme")
+        with self.assertRaises(ValidationError):
+            second.full_clean()
+
+        self.assertEqual(PageNotFoundEntry.objects.filter(site=site).count(), 1)
+
+    @override_settings(APPEND_SLASH=False)
+    def test_trailing_slash_variants_allowed_when_append_slash_disabled(self):
+        site = self._create_site("no-append.test", is_default=True)
+        first = self._create_entry(site, "/path")
+        second = PageNotFoundEntry(site=site, url="/path/")
+
+        # Should validate and save because APPEND_SLASH=False
+        second.full_clean()
+        second.save()
+
+        self.assertEqual(
+            set(PageNotFoundEntry.objects.filter(site=site).values_list("url", flat=True)),
+            {"/path", "/path/"},
+        )
+        # Ensure first object still persists
+        self.assertEqual(PageNotFoundEntry.objects.filter(pk=first.pk).count(), 1)
+
+    @override_settings(APPEND_SLASH=True)
+    def test_same_url_allowed_on_different_sites_even_with_append_slash(self):
+        site_one = self._create_site("one.test", is_default=True)
+        site_two = self._create_site("two.test")
+
+        entry_one = self._create_entry(site_one, "/shared/")
+        entry_two = PageNotFoundEntry(site=site_two, url="/shared/")
+        entry_two.full_clean()
+        entry_two.save()
+
+        self.assertNotEqual(entry_one.site_id, entry_two.site_id)
+        self.assertEqual(PageNotFoundEntry.objects.filter(url="/shared/").count(), 2)
+
+    @override_settings(APPEND_SLASH=True)
+    def test_middleware_does_not_create_duplicate_variant_on_append_slash(self):
+        site = self._create_site("testserver", is_default=True)
+        PageNotFoundEntry.objects.create(site=site, url="/append-only/")
+
+        # Simulate a 404 response for the variant without trailing slash
+        middleware = PageNotFoundRedirectMiddleware(lambda request: HttpResponse(status=404))
+        request = self.request_factory.get("/append-only", HTTP_HOST=site.hostname)
+        middleware(request)
+
+        urls = set(PageNotFoundEntry.objects.filter(site=site).values_list("url", flat=True))
+        self.assertEqual(urls, {"/append-only/"})

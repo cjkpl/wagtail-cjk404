@@ -33,5 +33,9 @@ jobs:
           ruff check --output-format=github --select=E9,F63,F7,F82 --target-version=py310 --line-length=100 .
 
       - name: Run Tests
+        env:
+          PYTHONPATH: "${{ github.workspace }}"
+          DJANGO_SETTINGS_MODULE: testproject.settings.base
         run: |
-          (cd "testproject" && DJANGO_SETTINGS_MODULE=testproject.settings.base pytest ../cjk404/tests --disable-pytest-warnings)
+          cd "testproject"
+          pytest ../cjk404/tests --disable-pytest-warnings

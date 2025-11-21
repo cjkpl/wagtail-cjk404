@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.12" ]
-        django-version: [ "5.2.8", "6.0rc1" ]
+        django-version: [ "5.2.8" ]
         wagtail-version: [ "6.4.2", "7.2" ]
 
     steps:

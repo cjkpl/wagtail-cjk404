@@ -1,3 +1,4 @@
 Django>=5.2.8
 Wagtail>=7.2
 django-filter>=25.2
+wagtail-cjk404@git+https://github.com/cjkpl/wagtail-cjk404.git

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Optional
 from typing import Union
 
@@ -10,19 +11,15 @@ from django.test import TestCase
 from wagtail.models import Page
 from wagtail.models import Site
 
-from cjk404.middleware import DJANGO_REGEX_REDIRECTS_CACHE_KEY
-from cjk404.middleware import DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
 from cjk404.middleware import PageNotFoundRedirectMiddleware
 from cjk404.models import PageNotFoundEntry
 
 
 class BaseCjk404TestCase(TestCase):
-    """Shared setup and helpers for cjk404 tests."""
 
     def setUp(self) -> None:
         super().setUp()
-        cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_KEY)
-        cache.delete(DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY)
+        cache.clear()
         self.request_factory = RequestFactory()
         self.root_page = Page.get_first_root_node()
         if self.root_page is None:

@@ -45,7 +45,7 @@ class PageNotFoundEntry(models.Model):
 
     created = models.DateTimeField(auto_now_add=True, blank=True, verbose_name="Created")
     last_hit = models.DateTimeField(auto_now_add=True, blank=True, verbose_name="Last Hit")
-    hits = models.PositiveIntegerField(default=0, verbose_name="# Hits")
+    hits = models.PositiveIntegerField(default=0, verbose_name="Number of Views")
     permanent = models.BooleanField(default=False)
     is_active = models.BooleanField("Is Active?", default=True)
 
@@ -62,32 +62,26 @@ class PageNotFoundEntry(models.Model):
     )
 
     panels = [
+        FieldPanel("is_active", widget=SwitchInput()),
         MultiFieldPanel(
             [
                 FieldPanel("site"),
                 FieldPanel("url"),
-                FieldPanel("regular_expression"),
+                FieldPanel("regular_expression", widget=SwitchInput()),
             ],
             heading="Old Path / Redirect From",
         ),
         MultiFieldPanel(
             [
-                FieldPanel("hits"),
-                FieldPanel("is_active", widget=SwitchInput()),
-            ],
-            heading="Hit stats",
-            classname="collapsible",
-        ),
-        MultiFieldPanel(
-            [
                 PageChooserPanel("redirect_to_page"),
                 FieldPanel("redirect_to_url"),
-                FieldPanel("permanent"),
-                FieldPanel("fallback_redirect"),
+                FieldPanel("permanent", widget=SwitchInput()),
+                FieldPanel("fallback_redirect", widget=SwitchInput()),
             ],
             heading="New Path / Redirect To",
             classname="collapsible",
         ),
+        FieldPanel("hits", heading="Number of Views", read_only=True),
     ]
 
     @property
@@ -170,6 +164,9 @@ class PageNotFoundEntry(models.Model):
         date_str = formats.date_format(localized, "j F Y")
         time_str = formats.time_format(localized, "H:i")
         return f"{date_str} at {time_str}"
+
+    def formatted_updated_date(self) -> str:
+        return self.formatted_last_viewed()
 
     def formatted_created(self) -> str:
         if not self.created:
@@ -260,11 +257,6 @@ class PageNotFoundEntry(models.Model):
 
     @staticmethod
     def build_url_variants(url: str, *, append_slash: bool) -> Set[str]:
-        """Return URL variants that should be treated as equivalent.
-
-        When APPEND_SLASH is enabled Django will treat ``/foo`` and ``/foo/`` as
-        the same path, so we validate those as a single logical URL.
-        """
         sanitized = url.strip()
         variants: Set[str] = {sanitized}
         if append_slash:
@@ -297,6 +289,13 @@ class PageNotFoundEntry(models.Model):
                 " slash are considered the same."
             )
             raise ValidationError({"url": message})
+
+    def clean(self) -> None:
+        super().clean()
+        if self.redirect_to_page and self.redirect_to_url:
+            raise ValidationError(
+                "Please choose either 'Redirect to Page' or 'Redirect to URL', not both."
+            )
 
     class Meta:
         verbose_name = "redirect"

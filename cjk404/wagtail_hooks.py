@@ -27,11 +27,13 @@ from wagtail.snippets.views.snippets import EditView
 from wagtail.snippets.views.snippets import IndexView
 from wagtail.snippets.views.snippets import SnippetViewSet
 
+from cjk404.builtin_redirects import builtin_redirect_status_for_site
 from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_KEY
 from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
 from cjk404.cache import build_cache_key
 from cjk404.models import PageNotFoundEntry
 from cjk404.views import clear_redirect_cache_view
+from cjk404.views import import_builtin_redirects_view
 from cjk404.views import toggle_redirect_activation_view
 
 
@@ -41,12 +43,12 @@ def multiple_sites_exist() -> bool:
 
 
 class PageNotFoundEntryFilterSet(WagtailFilterSet):
-    last_hit = DateTimeFromToRangeFilter(
-        label="Last Viewed Date Range",
-        widget=DateRangePickerWidget,
-    )
     created = DateTimeFromToRangeFilter(
         label="Created Date Range",
+        widget=DateRangePickerWidget,
+    )
+    last_hit = DateTimeFromToRangeFilter(
+        label="Updated Date Range",
         widget=DateRangePickerWidget,
     )
     redirect_to_url_present = BooleanFilter(
@@ -153,6 +155,24 @@ class PageNotFoundEntryIndexView(IndexView):
         multiple_sites_exist = len(sites) > 1
         for order, site in enumerate(sites, start=1):
             display_name = site.site_name or site.hostname or f"Site {site.id}"
+            existing_count, total_count = builtin_redirect_status_for_site(site)
+            import_url = reverse("cjk404-import-builtin-redirects")
+            if site.id is not None:
+                import_url = f"{import_url}?site_id={site.id}"
+            import_label = (
+                f"Import Built-in Redirects for {display_name} ({existing_count}/{total_count})"
+                if multiple_sites_exist
+                else f"Import Built-in Redirects ({existing_count}/{total_count})"
+            )
+            buttons.append(
+                HeaderButton(
+                    import_label,
+                    url=import_url,
+                    icon_name="download",
+                    priority=200 + order,
+                )
+            )
+
             label = f"Clear Cache for {display_name}" if multiple_sites_exist else "Clear Cache"
             clear_cache_url = reverse("cjk404-clear-redirect-cache")
             if site.id is not None:
@@ -235,7 +255,7 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
                 ),
                 Column(
                     "formatted_last_viewed",
-                    label="Last Viewed",
+                    label="Last Accessed Date",
                     accessor="formatted_last_viewed",
                     sort_key="last_hit",
                 ),
@@ -244,6 +264,12 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
                     label="Created Date",
                     accessor="formatted_created",
                     sort_key="created",
+                ),
+                Column(
+                    "formatted_updated_date",
+                    label="Updated Date",
+                    accessor="formatted_updated_date",
+                    sort_key="last_hit",
                 ),
             ]
         )
@@ -264,6 +290,11 @@ def register_cjk404_admin_urls():
             "cjk404/redirects/clear-cache/",
             clear_redirect_cache_view,
             name="cjk404-clear-redirect-cache",
+        ),
+        path(
+            "cjk404/redirects/import-builtins/",
+            import_builtin_redirects_view,
+            name="cjk404-import-builtin-redirects",
         ),
         path(
             "cjk404/redirects/<int:pk>/toggle/",

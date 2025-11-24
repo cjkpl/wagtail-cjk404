@@ -9,16 +9,21 @@ from wagtail.models import Site
 
 from cjk404.cache import clear_redirect_caches
 
+SUCCESS = "\033[92m"
+WARNING = "\033[93m"
+FAIL = "\033[91m"
+ENDC = "\033[0m"
+
 
 class Command(BaseCommand):
 
-    help = "Clear Cache for Redirect Lookups"
+    help = "Clear Cache for Redirects"
 
     def add_arguments(self, parser) -> None:  # type: ignore[override]
         parser.add_argument(
             "--site-id",
             type=int,
-            help="Clear Cache for Redirect Lookups",
+            help="Clear Cache for Redirects",
         )
 
     def _get_target_site_ids(self, site_id: Optional[int]) -> list[Optional[int]]:
@@ -27,7 +32,7 @@ class Command(BaseCommand):
             site_ids.append(None)
             return site_ids
         if not Site.objects.filter(pk=site_id).exists():
-            raise CommandError(f"Site {site_id} Not Found")
+            raise CommandError(f"Site with ID={site_id} Not Found")
         return [site_id]
 
     def handle(self, *args: Any, **options: Any) -> str:
@@ -36,10 +41,26 @@ class Command(BaseCommand):
         target_site_ids = self._get_target_site_ids(site_id)
         for current_site_id in target_site_ids:
             clear_redirect_caches(current_site_id)
-        site_list = ", ".join(
-            "none" if current_site_id is None else str(current_site_id)
-            for current_site_id in target_site_ids
-        )
-        success_message = f"Cache for Redirect Lookups Cleared for Sites: {site_list}"
-        self.stdout.write(self.style.SUCCESS(success_message))
-        return success_message
+        if len(target_site_ids) == 1 and target_site_ids[0] is None:
+            success_message = "Redirects Cache Cleared"
+            colored = f"{SUCCESS}{success_message}{ENDC}"
+            self.stdout.write(colored)
+            return ""
+
+        site_names: list[str] = []
+        for current_site_id in target_site_ids:
+            if current_site_id is None:
+                continue
+            site = Site.objects.filter(pk=current_site_id).first()
+            display_name = (
+                site.site_name or site.hostname or f"Site {current_site_id}"
+                if site
+                else f"Site {current_site_id}"
+            )
+            site_names.append(display_name)
+
+        lines = "\n".join(f"- {name}" for name in site_names)
+        success_message = f"Redirects Cache Cleared for Sites:\n{lines}"
+        colored = f"{SUCCESS}{success_message}{ENDC}"
+        self.stdout.write(colored)
+        return ""

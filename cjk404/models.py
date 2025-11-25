@@ -91,14 +91,75 @@ class PageNotFoundEntry(models.Model):
             return self.redirect_to_page.url
         return self.redirect_to_url
 
-    def redirect_to_url_link(self) -> str:
+    @staticmethod
+    def _display_path(url: str) -> str:
+        parsed = urlsplit(url)
+        if parsed.scheme or parsed.netloc:
+            path = parsed.path or ""
+            query = f"?{parsed.query}" if parsed.query else ""
+            fragment = f"#{parsed.fragment}" if parsed.fragment else ""
+            return f"{path}{query}{fragment}" or url
+        return url
+
+    @staticmethod
+    def _display_full(url: str) -> str:
+        parsed = urlsplit(url)
+        if parsed.scheme or parsed.netloc:
+            host = parsed.netloc or ""
+            path = parsed.path or ""
+            query = f"?{parsed.query}" if parsed.query else ""
+            fragment = f"#{parsed.fragment}" if parsed.fragment else ""
+            return f"{host}{path}{query}{fragment}" or url
+        return url
+
+    def redirect_to_url_dropdown_link(self) -> str:
         if not self.redirect_to_url:
             return "-"
+
+        display_url = self.redirect_to_url
+        display_text = self._display_path(display_url)
+        display_full = self._display_full(display_url)
+        should_truncate = len(display_text) > 35
+        short_display = f"{display_text[:35]} .." if should_truncate else display_text
+        truncate_class = "has-full" if should_truncate else ""
+
         return format_html(
-            '<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>',
-            self.redirect_to_url,
-            self.redirect_to_url,
+            (
+                '<div class="cjk404-url-wrap w-dropdown w-inline-block" data-controller="w-dropdown">'
+                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
+                'class="cjk404-url {truncate_class}" title="{full}">'
+                '<span class="cjk404-url-short">{short}</span>'
+                "</a>"
+                '<button type="button" class="w-dropdown__toggle w-dropdown__toggle--icon" '
+                'data-w-dropdown-target="toggle" aria-label="Actions">'
+                '<svg class="icon icon-dots-horizontal w-dropdown__toggle-icon" aria-hidden="true">'
+                '<use href="#icon-dots-horizontal"></use></svg>'
+                "</button>"
+                '<div class="w-dropdown__content" data-w-dropdown-target="content">'
+                '<div class="cjk404-dropdown-box">'
+                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
+                'class="cjk404-url-full-link cjk404-url" title="{full_text}">'
+                '<svg class="icon icon-expand-right icon" aria-hidden="true">'
+                '<use href="#icon-expand-right"></use></svg>'
+                '{full_text}'
+                "</a>"
+                "</div>"
+                "</div>"
+                "</div>"
+            ),
+            link=self.redirect_to_url,
+            truncate_class=truncate_class,
+            short=short_display,
+            full=display_full,
+            full_text=display_full,
         )
+
+    def redirect_to_target_link(self) -> str:
+        if self.redirect_to_page:
+            return self.redirect_to_page_link()
+        if self.redirect_to_url:
+            return self.redirect_to_url_dropdown_link()
+        return "-"
 
     def redirect_to_page_link(self) -> str:
         if not self.redirect_to_page:
@@ -142,16 +203,19 @@ class PageNotFoundEntry(models.Model):
 
         admin_edit_url = reverse("wagtailadmin_pages:edit", args=[self.redirect_to_page.pk])
 
-        should_truncate = len(display_url) > 35
+        display_text = path_with_suffix or display_url
+        display_full = display_url
+        should_truncate = len(display_text) > 35
         short_display = (
-            f"{display_url[:35]} .."
+            f"{display_text[:35]} .."
             if should_truncate
-            else display_url
+            else display_text
         )
         truncate_class = "has-full" if should_truncate else ""
 
         return format_html(
             (
+                "<div>"
                 '<div class="cjk404-url-wrap w-dropdown w-inline-block" '
                 'data-controller="w-dropdown">'
                 '<a href="{link}" target="_blank" rel="noopener noreferrer" '
@@ -166,10 +230,10 @@ class PageNotFoundEntry(models.Model):
                 '<div class="w-dropdown__content" data-w-dropdown-target="content">'
                 '<div class="cjk404-dropdown-box">'
                 '<a href="{link}" target="_blank" rel="noopener noreferrer" '
-                'class="cjk404-url-full-link cjk404-url" title="{full}">'
+                'class="cjk404-url-full-link cjk404-url" title="{full_text}">'
                 '<svg class="icon icon-expand-right icon" aria-hidden="true">'
                 '<use href="#icon-expand-right"></use></svg>'
-                '{full}'
+                '{full_text}'
                 "</a>"
                 '<a href="{admin_link}" target="_blank" rel="noopener noreferrer" '
                 'class="cjk404-url-full-link" title="Edit in Wagtail">'
@@ -180,11 +244,13 @@ class PageNotFoundEntry(models.Model):
                 "</div>"
                 "</div>"
                 "</div>"
+                "</div>"
             ),
             link=link_url,
             truncate_class=truncate_class,
             short=short_display,
-            full=display_url,
+            full=display_full,
+            full_text=display_full,
             admin_link=admin_edit_url,
         )
 
@@ -288,7 +354,7 @@ class PageNotFoundEntry(models.Model):
         return ""
 
     def __str__(self) -> str:
-        return f"{self.url} ---> {self.redirect_to}"
+        return "Redirect"
 
     def url_with_host(self) -> str:
         host = ""
@@ -302,7 +368,7 @@ class PageNotFoundEntry(models.Model):
         return f"{host}{self.url}" if host else self.url
 
     def get_admin_display_title(self) -> str:
-        return self.url_with_host()
+        return self.url
 
     @property
     def is_builtin_regex(self) -> bool:
@@ -330,8 +396,10 @@ class PageNotFoundEntry(models.Model):
 
         return self.url_with_host()
 
-    title_with_host.short_description = "Redirect from URL"  # type: ignore[attr-defined]
+    def title_with_host_display(self) -> str:
+        return self.title_with_host
 
+    title_with_host_display.short_description = "Redirect from URL"  # type: ignore[attr-defined]
 
     def save(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
         update_fields = kwargs.get("update_fields")

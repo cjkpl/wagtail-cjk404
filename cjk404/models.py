@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from typing import Iterable
 from typing import Optional
 from typing import Set
@@ -18,7 +19,6 @@ from wagtail.admin.panels import PageChooserPanel
 from wagtail.admin.widgets import SwitchInput
 from wagtail.models import Page
 from wagtail.models import Site
-
 
 class PageNotFoundEntry(models.Model):
     site = models.ForeignKey(
@@ -45,6 +45,7 @@ class PageNotFoundEntry(models.Model):
 
     created = models.DateTimeField(auto_now_add=True, blank=True, verbose_name="Created")
     last_hit = models.DateTimeField(auto_now_add=True, blank=True, verbose_name="Last Hit")
+    updated = models.DateTimeField(auto_now=True, null=True, blank=True, verbose_name="Updated")
     hits = models.PositiveIntegerField(default=0, verbose_name="Number of Views")
     permanent = models.BooleanField(default=False)
     is_active = models.BooleanField("Is Active?", default=True)
@@ -141,19 +142,50 @@ class PageNotFoundEntry(models.Model):
 
         admin_edit_url = reverse("wagtailadmin_pages:edit", args=[self.redirect_to_page.pk])
 
+        should_truncate = len(display_url) > 35
+        short_display = (
+            f"{display_url[:35]} .."
+            if should_truncate
+            else display_url
+        )
+        truncate_class = "has-full" if should_truncate else ""
+
         return format_html(
             (
-                '<div><a href="{link}" target="_blank" rel="noopener noreferrer">{url}</a></div>'
-                '<div class="w-text-14 w-text-subtle">'
-                '<a class="button button-small button-secondary button--ghost" '
-                'href="{admin_link}" target="_blank" rel="noopener noreferrer">'
-                "{title}"
-                "</a></div>"
+                '<div class="cjk404-url-wrap w-dropdown w-inline-block" '
+                'data-controller="w-dropdown">'
+                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
+                'class="cjk404-url {truncate_class}" title="{full}">'
+                '<span class="cjk404-url-short">{short}</span>'
+                "</a>"
+                '<button type="button" class="w-dropdown__toggle w-dropdown__toggle--icon" '
+                'data-w-dropdown-target="toggle" aria-label="Actions">'
+                '<svg class="icon icon-dots-horizontal w-dropdown__toggle-icon" aria-hidden="true">'
+                '<use href="#icon-dots-horizontal"></use></svg>'
+                "</button>"
+                '<div class="w-dropdown__content" data-w-dropdown-target="content">'
+                '<div class="cjk404-dropdown-box">'
+                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
+                'class="cjk404-url-full-link cjk404-url" title="{full}">'
+                '<svg class="icon icon-expand-right icon" aria-hidden="true">'
+                '<use href="#icon-expand-right"></use></svg>'
+                '{full}'
+                "</a>"
+                '<a href="{admin_link}" target="_blank" rel="noopener noreferrer" '
+                'class="cjk404-url-full-link" title="Edit in Wagtail">'
+                '<svg class="icon icon-site icon" aria-hidden="true">'
+                '<use href="#icon-site"></use></svg>'
+                'Edit in Wagtail'
+                "</a>"
+                "</div>"
+                "</div>"
+                "</div>"
             ),
             link=link_url,
-            url=display_url,
+            truncate_class=truncate_class,
+            short=short_display,
+            full=display_url,
             admin_link=admin_edit_url,
-            title=self.redirect_to_page.title or display_url,
         )
 
     def formatted_last_viewed(self) -> str:
@@ -166,7 +198,12 @@ class PageNotFoundEntry(models.Model):
         return f"{date_str} at {time_str}"
 
     def formatted_updated_date(self) -> str:
-        return self.formatted_last_viewed()
+        if not self.updated:
+            return "-"
+        localized = timezone.localtime(self.updated)
+        date_str = formats.date_format(localized, "j F Y")
+        time_str = formats.time_format(localized, "H:i")
+        return f"{date_str} at {time_str}"
 
     def formatted_created(self) -> str:
         if not self.created:
@@ -191,7 +228,15 @@ class PageNotFoundEntry(models.Model):
                 root_url = ""
         if not root_url:
             root_url = getattr(self.site, "root_url", None) or f"https://{hostname}"
-        default_suffix = " - Default" if getattr(self.site, "is_default_site", False) else ""
+        default_suffix = ""
+        if getattr(self.site, "is_default_site", False):
+            default_suffix = format_html(
+                ' <svg class="icon icon-pick default" aria-hidden="true" '
+                'style="width:1em;height:1em;vertical-align:text-bottom;color:#007d7e;">'
+                '<use href="#icon-pick"></use>'
+                "</svg>"
+                '<span class="w-sr-only">Default site</span>'
+            )
 
         return format_html(
             '{} (<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>){}',
@@ -201,59 +246,98 @@ class PageNotFoundEntry(models.Model):
             default_suffix,
         )
 
-    def active_status_badge(self) -> str:
-        label = "Active" if self.is_active else "Inactive"
-        icon_name = "check" if self.is_active else "cross"
+    def _toggle_badge(self, field: str, value: bool, true_icon: str, false_icon: str) -> str:
+        label = "Yes" if value else "No"
+        icon_name = true_icon if value else false_icon
         icon_class = (
-            "icon icon-check default w-text-positive-100"
-            if self.is_active
-            else "icon icon-cross default w-text-text-error"
+            f"icon icon-{true_icon} default w-text-positive-100"
+            if value
+            else f"icon icon-{false_icon} default w-text-text-error"
         )
+        toggle_url = reverse(f"cjk404-toggle-{field}", args=[self.pk]) if self.pk else ""
+        target_selector = f"data-cjk404-{field}-indicator"
         return format_html(
             (
-                '<span data-cjk404-active-indicator="{pk}">'
+                '<span {target}="{pk}" data-cjk404-toggle-url="{toggle_url}" '
+                'role="button" tabindex="0" '
+                'style="cursor:pointer;transition:opacity 0.2s ease;">'
                 '<svg class="{icon_class}" aria-hidden="true">'
                 '<use href="#icon-{icon_name}"></use>'
                 "</svg>"
                 '<span class="w-sr-only">{label}</span>'
                 "</span>"
             ),
+            target=target_selector,
             pk=self.pk,
+            toggle_url=toggle_url,
             icon_class=icon_class,
             icon_name=icon_name,
             label=label,
         )
 
+    def active_status_badge(self) -> str:
+        return self._toggle_badge("active", self.is_active, "check", "cross")
+
+    def permanent_status_badge(self) -> str:
+        return self._toggle_badge("permanent", self.permanent, "check", "cross")
+
+    def fallback_status_badge(self) -> str:
+        return self._toggle_badge("fallback", self.fallback_redirect, "check", "cross")
+
     def activation_toggle_button(self) -> str:
-        if not self.pk:
-            return "-"
-        action_url = reverse("cjk404-toggle-redirect", args=[self.pk])
-        is_active = self.is_active
-        label = "Deactivate" if is_active else "Activate"
-        active_class = "button button-small button-secondary"
-        deactivate_class = "button button-small button-secondary button--destructive"
-        button_class = deactivate_class if is_active else active_class
-        return format_html(
-            (
-                '<button type="button" class="{}" '
-                'data-cjk404-toggle-url="{}" data-cjk404-target="{}" '
-                'data-active="{}" data-activate-label="Activate" '
-                'data-deactivate-label="Deactivate" data-activate-class="{}" '
-                'data-deactivate-class="{}" data-cjk404-toggle-button="{}">'
-                "{}</button>"
-            ),
-            button_class,
-            action_url,
-            self.pk,
-            str(is_active).lower(),
-            active_class,
-            deactivate_class,
-            self.pk,
-            label,
-        )
+        return ""
 
     def __str__(self) -> str:
         return f"{self.url} ---> {self.redirect_to}"
+
+    def url_with_host(self) -> str:
+        host = ""
+        if self.site_id:
+            hostname = self.site.hostname or ""
+            port = getattr(self.site, "port", None)
+            if hostname:
+                host = hostname
+                if port and port not in (80, 443):
+                    host = f"{hostname}:{port}"
+        return f"{host}{self.url}" if host else self.url
+
+    def get_admin_display_title(self) -> str:
+        return self.url_with_host()
+
+    @property
+    def is_builtin_regex(self) -> bool:
+        if not self.regular_expression:
+            return False
+        from cjk404.builtin_redirects import BUILTIN_REDIRECTS
+
+        return any(
+            redirect.regular_expression and redirect.url == self.url for redirect in BUILTIN_REDIRECTS
+        )
+
+    @property
+    def title_with_host(self) -> str:
+        if self.regular_expression:
+            base = format_html('<code class="cjk404-code">{}</code>', self.url)
+            if self.is_builtin_regex:
+                return format_html(
+                    '{} <svg class="icon icon-code default" aria-hidden="true" '
+                    'style="width:1em;height:1em;vertical-align:text-bottom;color:#007d7e;">'
+                    '<use href="#icon-code"></use></svg>'
+                    '<span class="w-sr-only">Built-in redirect</span>',
+                    base,
+                )
+            return base
+
+        return self.url_with_host()
+
+    title_with_host.short_description = "Redirect from URL"  # type: ignore[attr-defined]
+
+
+    def save(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "updated" not in update_fields:
+            kwargs["update_fields"] = [*update_fields, "updated"]
+        super().save(*args, **kwargs)
 
     @staticmethod
     def build_url_variants(url: str, *, append_slash: bool) -> Set[str]:

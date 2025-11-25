@@ -26,13 +26,11 @@
         }
     }
 
-    async function toggleRedirect(button) {
-        const url = button.dataset.cjk404ToggleUrl;
-        const pk = button.dataset.cjk404Target;
-        if (!url || !pk) {
+    async function toggleRedirect(trigger) {
+        const url = trigger.dataset.cjk404ToggleUrl;
+        if (!url) {
             return;
         }
-        button.disabled = true;
         try {
             const response = await fetch(url, {
                 method: 'POST',
@@ -42,22 +40,20 @@
                 },
             });
             if (!response.ok) {
-                throw new Error(`Toggle failed (${response.status})`);
+                throw new Error(`Toggle Failed (${response.status})`);
             }
             const data = await response.json();
             if (!data || data.ok !== true) {
-                throw new Error('Toggle failed');
+                throw new Error('Toggle Failed');
             }
-            replaceWithHtml(
-                `[data-cjk404-active-indicator="${pk}"]`,
-                data.badge_html,
-            );
-            replaceWithHtml(`[data-cjk404-toggle-button="${pk}"]`, data.button_html);
+            const targetSelector = data.target_selector || trigger.dataset.cjk404ReplaceSelector;
+            if (targetSelector && data.badge_html) {
+                replaceWithHtml(targetSelector, data.badge_html);
+            }
         } catch (error) {
             /* eslint-disable no-console */
             console.error(error);
             /* eslint-enable no-console */
-            button.disabled = false;
         }
     }
 
@@ -68,5 +64,19 @@
         }
         event.preventDefault();
         toggleRedirect(trigger);
+    });
+
+    document.addEventListener('mouseover', (event) => {
+        const trigger = event.target.closest('[data-cjk404-toggle-url]');
+        if (trigger) {
+            trigger.style.opacity = '0.7';
+        }
+    });
+
+    document.addEventListener('mouseout', (event) => {
+        const trigger = event.target.closest('[data-cjk404-toggle-url]');
+        if (trigger) {
+            trigger.style.opacity = '';
+        }
     });
 })();

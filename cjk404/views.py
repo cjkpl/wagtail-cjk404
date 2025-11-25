@@ -33,7 +33,41 @@ def toggle_redirect_activation_view(request: HttpRequest, pk: int) -> HttpRespon
             "pk": entry.pk,
             "is_active": entry.is_active,
             "badge_html": entry.active_status_badge(),
-            "button_html": entry.activation_toggle_button(),
+            "target_selector": f'[data-cjk404-active-indicator="{entry.pk}"]',
+        }
+    )
+
+
+@login_required
+@permission_required("cjk404.change_pagenotfoundentry", raise_exception=True)
+@require_POST
+def toggle_redirect_permanent_view(request: HttpRequest, pk: int) -> HttpResponse:
+    entry = get_object_or_404(PageNotFoundEntry, pk=pk)
+    entry.permanent = not entry.permanent
+    entry.save(update_fields=["permanent"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "pk": entry.pk,
+            "badge_html": entry.permanent_status_badge(),
+            "target_selector": f'[data-cjk404-permanent-indicator="{entry.pk}"]',
+        }
+    )
+
+
+@login_required
+@permission_required("cjk404.change_pagenotfoundentry", raise_exception=True)
+@require_POST
+def toggle_redirect_fallback_view(request: HttpRequest, pk: int) -> HttpResponse:
+    entry = get_object_or_404(PageNotFoundEntry, pk=pk)
+    entry.fallback_redirect = not entry.fallback_redirect
+    entry.save(update_fields=["fallback_redirect"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "pk": entry.pk,
+            "badge_html": entry.fallback_status_badge(),
+            "target_selector": f'[data-cjk404-fallback-indicator="{entry.pk}"]',
         }
     )
 
@@ -50,15 +84,15 @@ def clear_redirect_cache_view(request: HttpRequest) -> HttpResponse:
         try:
             site_id = int(site_id_raw)
         except (TypeError, ValueError):
-            messages.error(request, "Invalid site id supplied for cache clearing.")
+            messages.error(request, "Invalid Site ID")
             return redirect(index_url)
 
     try:
         call_command("clear_redirect_cache", site_id=site_id)
     except CommandError as exc:
-        messages.error(request, f"Could not clear redirect caches: {exc}")
+        messages.error(request, f"Could Not Clear Redirect Caches: {exc}")
     except Exception as exc:  # pragma: no cover - defensive fallback for unexpected errors
-        messages.error(request, f"Clearing redirect caches failed unexpectedly: {exc}")
+        messages.error(request, f"Clearing Redirect Caches Failed Unexpectedly: {exc}")
     else:
         site_name = "All Sites"
         if site_id is not None:
@@ -75,8 +109,6 @@ def clear_redirect_cache_view(request: HttpRequest) -> HttpResponse:
 @permission_required("cjk404.add_pagenotfoundentry", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def import_builtin_redirects_view(request: HttpRequest) -> HttpResponse:
-    """Import predefined redirects for one or all sites, without overwriting existing ones."""
-
     index_url: str = reverse("wagtailsnippets_cjk404_pagenotfoundentry:list")
     site_id_raw = request.POST.get("site_id") or request.GET.get("site_id")
     site_id: int | None = None
@@ -85,18 +117,18 @@ def import_builtin_redirects_view(request: HttpRequest) -> HttpResponse:
         try:
             site_id = int(site_id_raw)
         except (TypeError, ValueError):
-            messages.error(request, "Invalid site id supplied for importing built-in redirects.")
+            messages.error(request, "Invalid Site ID")
             return redirect(index_url)
 
     sites_qs = Site.objects.all()
     if site_id is not None:
         sites_qs = sites_qs.filter(pk=site_id)
         if not sites_qs.exists():
-            messages.error(request, f"Site with id={site_id} does not exist.")
+            messages.error(request, f"Site with ID={site_id} Not Found")
             return redirect(index_url)
 
     if not sites_qs.exists():
-        messages.error(request, "No Sites configured; cannot import built-in redirects.")
+        messages.error(request, "No Sites Configured — Cannot Import Built-In Redirects")
         return redirect(index_url)
 
     results: list[ImportResult] = []
@@ -107,7 +139,7 @@ def import_builtin_redirects_view(request: HttpRequest) -> HttpResponse:
             site_name = site.site_name or site.hostname or f"Site {site.pk}"
             messages.error(
                 request,
-                f"Import failed for {site_name}: {exc}",
+                f"Import Failed for {site_name}: {exc}",
             )
 
     for result in results:
@@ -115,16 +147,16 @@ def import_builtin_redirects_view(request: HttpRequest) -> HttpResponse:
         if result.created:
             messages.success(
                 request,
-                f"Imported {result.created} built-in redirect(s) for {site_name}.",
+                f"Imported {result.created} Built-In Redirect(s) for {site_name}",
             )
         else:
-            messages.info(request, f"No new built-in redirects imported for {site_name}.")
+            messages.info(request, f"No New Built-In Redirects Imported for {site_name}")
 
         if result.skipped_urls:
             skipped_count = len(result.skipped_urls)
             messages.warning(
                 request,
-                f"{site_name}: skipped {skipped_count} existing URL(s).",
+                f"{site_name}: Skipped {skipped_count} Existing URL(s)",
             )
 
         if result.errors:

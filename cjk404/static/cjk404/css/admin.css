@@ -1,0 +1,73 @@
+.cjk404-url-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    vertical-align: bottom;
+}
+
+.cjk404-url {
+    display: inline-block;
+    color: var(--w-color-text-link-default, #007d7e);
+    vertical-align: bottom;
+}
+
+.cjk404-url.has-full {
+    max-width: 25ch;
+    min-width: 25ch;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.listing.cjk404-listing td.title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.listing.cjk404-listing td.title .title-wrapper {
+    font-weight: 400;
+    color: var(--w-color-text-context);
+    font-size: 13px;
+}
+
+.listing.cjk404-listing td.title .actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.25rem;
+    list-style: none;
+}
+
+.listing.cjk404-listing td.title .actions li {
+    margin: 0;
+}
+
+.cjk404-url-full-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #f5f5f5;
+    white-space: nowrap;
+}
+
+.cjk404-url-full-link svg {
+    color: #f5f5f5;
+    fill: currentColor;
+    stroke: currentColor;
+}
+
+.cjk404-dropdown-box {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+
+.tippy-box[data-theme="dropdown"] {
+    max-width: none !important;
+    overflow: visible;
+}
+
+.tippy-box[data-theme="dropdown"] .tippy-content {
+    overflow: visible;
+}

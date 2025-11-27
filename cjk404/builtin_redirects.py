@@ -31,9 +31,35 @@ class ImportResult:
 
 
 BUILTIN_REDIRECTS: Tuple[BuiltinRedirect, ...] = (
+    BuiltinRedirect(url=r"^/.*\.py(?:\?.*)?$", regular_expression=True),
     BuiltinRedirect(url=r"^/.*\.php(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.(jsp|jspx)(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.(asp|aspx)(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.sql(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.env(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.git(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/\.git(?:/.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.svn(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/\.svn(?:/.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.aws(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/node_modules/.*", regular_expression=True),
     BuiltinRedirect(url=r".*pg_sleep.*", regular_expression=True),
+    BuiltinRedirect(url=r".*information_schema.*", regular_expression=True),
+    BuiltinRedirect(url=r".*/phpmyadmin.*", regular_expression=True),
     BuiltinRedirect(url=r".*wp-includes.*", regular_expression=True),
+    BuiltinRedirect(url=r".*wp-admin.*", regular_expression=True),
+    BuiltinRedirect(url=r".*wp-login.*", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.vscode.*", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.idea.*", regular_expression=True),
+    BuiltinRedirect(url=r"^/.*\.DS_Store(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r"^/id_rsa(?:\.pub)?(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(url=r".*(\.\./|\.\.\\).*", regular_expression=True),
+    BuiltinRedirect(url=r".*/etc/passwd.*", regular_expression=True),
+    BuiltinRedirect(url=r".*\.bak(?:\?.*)?$", regular_expression=True),
+    BuiltinRedirect(
+        url=r"^/(?:backup|db|dump|database|site|www)\.(?:sql|sqlite3?|zip|tar|tgz|gz|7z|bak)(?:\?.*)?$",
+        regular_expression=True,
+    ),
 )
 
 

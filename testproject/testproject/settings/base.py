@@ -38,7 +38,6 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "cjk404.middleware.PageNotFoundRedirectMiddleware",
     "wagtail.contrib.redirects.middleware.RedirectMiddleware",
-
 ]
 
 ROOT_URLCONF = "testproject.urls"

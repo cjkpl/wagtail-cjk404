@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-
-"""Top-level package for cjk404."""
-
 __author__ = """Grzegorz Król, Filip Woźniak"""
 __email__ = "gk@kachange.eu; fw@kachange.eu"
 release = ["24", "5", "1"]

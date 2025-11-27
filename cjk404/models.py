@@ -5,6 +5,7 @@ from typing import Iterable
 from typing import Optional
 from typing import Set
 from urllib.parse import urlsplit
+import re
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -12,7 +13,9 @@ from django.db import models
 from django.urls import reverse
 from django.utils import formats
 from django.utils import timezone
+from django.utils.html import conditional_escape
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from wagtail.admin.panels import FieldPanel
 from wagtail.admin.panels import MultiFieldPanel
 from wagtail.admin.panels import PageChooserPanel
@@ -56,9 +59,7 @@ class PageNotFoundEntry(models.Model):
         "Fallback Redirect",
         default=False,
         help_text=(
-            "This redirect is only matched after all other redirects have failed to "
-            "match.<br>This allows us to define a general 'catch-all' that is only "
-            "used as a fallback after more specific redirects have been attempted."
+            "If enabled, the redirect is used of all other redirects have failed to match."
         ),
     )
 
@@ -70,7 +71,7 @@ class PageNotFoundEntry(models.Model):
                 FieldPanel("url"),
                 FieldPanel("regular_expression", widget=SwitchInput()),
             ],
-            heading="Old Path / Redirect From",
+            heading="Redirect from",
         ),
         MultiFieldPanel(
             [
@@ -79,7 +80,7 @@ class PageNotFoundEntry(models.Model):
                 FieldPanel("permanent", widget=SwitchInput()),
                 FieldPanel("fallback_redirect", widget=SwitchInput()),
             ],
-            heading="New Path / Redirect To",
+            heading="Redirect to",
             classname="collapsible",
         ),
         FieldPanel("hits", heading="Number of Views", read_only=True),
@@ -112,39 +113,41 @@ class PageNotFoundEntry(models.Model):
             return f"{host}{path}{query}{fragment}" or url
         return url
 
+    def _display_full_with_site(self, url: str) -> str:
+        parsed = urlsplit(url)
+        if parsed.scheme or parsed.netloc:
+            return self._display_full(url)
+        host = ""
+        if self.site_id:
+            host = self.site.hostname or ""
+            port = getattr(self.site, "port", None)
+            if host and port and port not in (80, 443):
+                host = f"{host}:{port}"
+        return f"{host}{url}" if host else url
+
+    @staticmethod
+    def _add_soft_wraps(text: str) -> str:
+        escaped = conditional_escape(text)
+        wrapped = re.sub(r"([/\-])", r"\1<wbr>", escaped)
+        return mark_safe(wrapped)
+
     def redirect_to_url_dropdown_link(self) -> str:
         if not self.redirect_to_url:
             return "-"
-
         display_url = self.redirect_to_url
         display_text = self._display_path(display_url)
-        display_full = self._display_full(display_url)
+        display_full = self._display_full_with_site(display_url)
         should_truncate = len(display_text) > 35
-        short_display = f"{display_text[:35]} .." if should_truncate else display_text
+        short_display = self._add_soft_wraps(display_text)
         truncate_class = "has-full" if should_truncate else ""
 
         return format_html(
             (
-                '<div class="cjk404-url-wrap w-dropdown w-inline-block" data-controller="w-dropdown">'
+                '<div class="cjk404-url-wrap">'
                 '<a href="{link}" target="_blank" rel="noopener noreferrer" '
                 'class="cjk404-url {truncate_class}" title="{full}">'
                 '<span class="cjk404-url-short">{short}</span>'
                 "</a>"
-                '<button type="button" class="w-dropdown__toggle w-dropdown__toggle--icon" '
-                'data-w-dropdown-target="toggle" aria-label="Actions">'
-                '<svg class="icon icon-dots-horizontal w-dropdown__toggle-icon" aria-hidden="true">'
-                '<use href="#icon-dots-horizontal"></use></svg>'
-                "</button>"
-                '<div class="w-dropdown__content" data-w-dropdown-target="content">'
-                '<div class="cjk404-dropdown-box">'
-                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
-                'class="cjk404-url-full-link cjk404-url" title="{full_text}">'
-                '<svg class="icon icon-expand-right icon" aria-hidden="true">'
-                '<use href="#icon-expand-right"></use></svg>'
-                '{full_text}'
-                "</a>"
-                "</div>"
-                "</div>"
                 "</div>"
             ),
             link=self.redirect_to_url,
@@ -164,7 +167,6 @@ class PageNotFoundEntry(models.Model):
     def redirect_to_page_link(self) -> str:
         if not self.redirect_to_page:
             return "-"
-
         try:
             page_url = self.redirect_to_page.url or ""
         except Exception:  # pragma: no cover - Wagtail resolves this dynamically
@@ -202,47 +204,23 @@ class PageNotFoundEntry(models.Model):
                 link_url = path_with_suffix or "#"
 
         admin_edit_url = reverse("wagtailadmin_pages:edit", args=[self.redirect_to_page.pk])
-
         display_text = path_with_suffix or display_url
         display_full = display_url
         should_truncate = len(display_text) > 35
-        short_display = (
-            f"{display_text[:35]} .."
-            if should_truncate
-            else display_text
-        )
+        short_display = self._add_soft_wraps(display_text)
         truncate_class = "has-full" if should_truncate else ""
-
         return format_html(
             (
                 "<div>"
-                '<div class="cjk404-url-wrap w-dropdown w-inline-block" '
-                'data-controller="w-dropdown">'
+                '<div class="cjk404-url-wrap">'
                 '<a href="{link}" target="_blank" rel="noopener noreferrer" '
-                'class="cjk404-url {truncate_class}" title="{full}">'
+                'class="cjk404-url {truncate_class}" title="{full}">'  # noqa: ISC001
                 '<span class="cjk404-url-short">{short}</span>'
                 "</a>"
-                '<button type="button" class="w-dropdown__toggle w-dropdown__toggle--icon" '
-                'data-w-dropdown-target="toggle" aria-label="Actions">'
-                '<svg class="icon icon-dots-horizontal w-dropdown__toggle-icon" aria-hidden="true">'
-                '<use href="#icon-dots-horizontal"></use></svg>'
-                "</button>"
-                '<div class="w-dropdown__content" data-w-dropdown-target="content">'
-                '<div class="cjk404-dropdown-box">'
-                '<a href="{link}" target="_blank" rel="noopener noreferrer" '
-                'class="cjk404-url-full-link cjk404-url" title="{full_text}">'
-                '<svg class="icon icon-expand-right icon" aria-hidden="true">'
-                '<use href="#icon-expand-right"></use></svg>'
-                '{full_text}'
-                "</a>"
                 '<a href="{admin_link}" target="_blank" rel="noopener noreferrer" '
-                'class="cjk404-url-full-link" title="Edit in Wagtail">'
-                '<svg class="icon icon-site icon" aria-hidden="true">'
-                '<use href="#icon-site"></use></svg>'
-                'Edit in Wagtail'
+                'class="button button-small button-secondary" title="Edit in Wagtail">'
+                "Edit"
                 "</a>"
-                "</div>"
-                "</div>"
                 "</div>"
                 "</div>"
             ),
@@ -250,14 +228,12 @@ class PageNotFoundEntry(models.Model):
             truncate_class=truncate_class,
             short=short_display,
             full=display_full,
-            full_text=display_full,
             admin_link=admin_edit_url,
         )
 
     def formatted_last_viewed(self) -> str:
         if not self.last_hit:
             return "-"
-
         localized = timezone.localtime(self.last_hit)
         date_str = formats.date_format(localized, "j F Y")
         time_str = formats.time_format(localized, "H:i")
@@ -298,10 +274,10 @@ class PageNotFoundEntry(models.Model):
         if getattr(self.site, "is_default_site", False):
             default_suffix = format_html(
                 ' <svg class="icon icon-pick default" aria-hidden="true" '
-                'style="width:1em;height:1em;vertical-align:text-bottom;color:#007d7e;">'
+                'style="width:1em;height:1em;vertical-align:text-bottom;color:#007D7E;">'
                 '<use href="#icon-pick"></use>'
                 "</svg>"
-                '<span class="w-sr-only">Default site</span>'
+                '<span class="w-sr-only">Default Site</span>'
             )
 
         return format_html(
@@ -375,7 +351,6 @@ class PageNotFoundEntry(models.Model):
         if not self.regular_expression:
             return False
         from cjk404.builtin_redirects import BUILTIN_REDIRECTS
-
         return any(
             redirect.regular_expression and redirect.url == self.url for redirect in BUILTIN_REDIRECTS
         )
@@ -386,15 +361,15 @@ class PageNotFoundEntry(models.Model):
             base = format_html('<code class="cjk404-code">{}</code>', self.url)
             if self.is_builtin_regex:
                 return format_html(
-                    '{} <svg class="icon icon-code default" aria-hidden="true" '
-                    'style="width:1em;height:1em;vertical-align:text-bottom;color:#007d7e;">'
-                    '<use href="#icon-code"></use></svg>'
-                    '<span class="w-sr-only">Built-in redirect</span>',
+                    '{} <svg class="icon icon-tag" aria-hidden="true" '
+                    'style="width:1em;height:1em;vertical-align:text-bottom;color:#007D7E;">'
+                    '<use href="#icon-tag"></use></svg>'
+                    '<span class="w-sr-only">Built-In Redirect</span>',
                     base,
                 )
             return base
 
-        return self.url_with_host()
+        return self.url
 
     def title_with_host_display(self) -> str:
         return self.title_with_host
@@ -422,7 +397,6 @@ class PageNotFoundEntry(models.Model):
     def _duplicate_urls_for_site(self) -> models.QuerySet["PageNotFoundEntry"]:
         append_slash = bool(settings.APPEND_SLASH and not self.regular_expression)
         candidate_urls = self.build_url_variants(self.url or "", append_slash=append_slash)
-
         queryset = PageNotFoundEntry.objects.filter(site=self.site, url__in=candidate_urls)
         if self.pk:
             queryset = queryset.exclude(pk=self.pk)
@@ -432,13 +406,10 @@ class PageNotFoundEntry(models.Model):
         super().validate_unique(exclude=exclude)
         if not self.site_id or not self.url:
             return
-
         duplicates_exist = self._duplicate_urls_for_site().exists()
         if duplicates_exist:
             message = (
                 "A redirect for this URL already exists for the selected site."
-                " With APPEND_SLASH enabled, URLs that only differ by a trailing"
-                " slash are considered the same."
             )
             raise ValidationError({"url": message})
 
@@ -446,10 +417,10 @@ class PageNotFoundEntry(models.Model):
         super().clean()
         if self.redirect_to_page and self.redirect_to_url:
             raise ValidationError(
-                "Please choose either 'Redirect to Page' or 'Redirect to URL', not both."
+                "Please specify redirect to Page or URL. You cannot define both values."
             )
 
     class Meta:
-        verbose_name = "redirect"
-        verbose_name_plural = "redirects"
+        verbose_name = "Redirect"
+        verbose_name_plural = "Redirects"
         ordering = ("-hits",)

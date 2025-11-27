@@ -150,7 +150,7 @@ def import_builtin_redirects_view(request: HttpRequest) -> HttpResponse:
                 f"Imported {result.created} Built-In Redirect(s) for {site_name}",
             )
         else:
-            messages.success(request, f"No New Built-In Redirects Imported for {site_name}")
+            messages.success(request, f"No New Built-In Redirects for {site_name}")
 
         if result.skipped_urls:
             skipped_count = len(result.skipped_urls)

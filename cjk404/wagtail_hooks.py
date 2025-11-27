@@ -18,9 +18,11 @@ from wagtail.admin.filters import DateRangePickerWidget
 from wagtail.admin.filters import WagtailFilterSet
 from wagtail.admin.ui.components import Component
 from wagtail.admin.ui.components import MediaContainer
+from wagtail.admin.ui.menus import MenuItem
 from wagtail.admin.ui.tables import BooleanColumn
 from wagtail.admin.ui.tables import Column
 from wagtail.admin.ui.tables import TitleColumn
+from wagtail.admin.widgets.button import BaseButton
 from wagtail.admin.widgets.button import Button
 from wagtail.admin.widgets.button import ButtonWithDropdown
 from wagtail.admin.widgets.button import HeaderButton
@@ -28,6 +30,7 @@ from wagtail.models import Site
 from wagtail.snippets.models import register_snippet
 from wagtail.snippets.views.snippets import CopyView
 from wagtail.snippets.views.snippets import CreateView
+from wagtail.snippets.views.snippets import DeleteView
 from wagtail.snippets.views.snippets import EditView
 from wagtail.snippets.views.snippets import IndexView
 from wagtail.snippets.views.snippets import SnippetViewSet
@@ -148,18 +151,65 @@ class PageNotFoundEntryCopyView(_NoStatusHistoryMixin, CopyView):
     pass
 
 
+class PageNotFoundEntryDeleteView(DeleteView):
+    view_name = "delete"
+
+    def get_success_message(self):
+        return "Redirect(s) Deleted"
+
+
 class PageNotFoundEntryIndexView(IndexView):
     table_classname = "listing cjk404-listing"
+
+    def get_list_buttons(self, instance):
+        next_url = self.request.get_full_path()
+        list_buttons = []
+        more_buttons = []
+
+        buttons = self.get_list_more_buttons(instance)
+        for hook in hooks.get_hooks("register_snippet_listing_buttons"):
+            buttons.extend(hook(instance, self.request.user, next_url))
+
+        for button in buttons:
+            if isinstance(button, BaseButton) and not button.allow_in_dropdown:
+                list_buttons.append(button)
+            elif isinstance(button, MenuItem):
+                if button.is_shown(self.request.user):
+                    more_buttons.append(Button.from_menu_item(button))
+            elif button.show:
+                more_buttons.append(button)
+
+        for hook in hooks.get_hooks("construct_snippet_listing_buttons"):
+            hook(more_buttons, instance, self.request.user)
+
+        if more_buttons:
+            list_buttons.append(
+                ButtonWithDropdown(
+                    buttons=more_buttons,
+                    icon_name="dots-horizontal",
+                    attrs={
+                        "aria-label": "More options",
+                    },
+                )
+            )
+
+        return list_buttons
 
     def _get_title_column(self, field_name, column_class=TitleColumn, **kwargs):
         if field_name == "__str__":
             kwargs.setdefault("accessor", "title_with_host_display")
             label = "Redirect from URL"
+            current_query = self.request.get_full_path()
         else:
             label = None
         column = super()._get_title_column(field_name, column_class, **kwargs)
         if label:
             column.label = label
+            column.get_url = lambda obj, _cq=current_query: self.url_helper.get_action_url(
+                "edit",
+                obj.pk,
+                url_params={"next": _cq},
+            )
         return column
 
     @property
@@ -278,6 +328,7 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
     add_view_class = PageNotFoundEntryCreateView
     edit_view_class = PageNotFoundEntryEditView
     copy_view_class = PageNotFoundEntryCopyView
+    delete_view_class = PageNotFoundEntryDeleteView
     list_per_page = 15
     search_fields = ("url", "redirect_to_url")
     filterset_class = PageNotFoundEntryFilterSet

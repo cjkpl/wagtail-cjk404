@@ -11,7 +11,5 @@ from cjk404.models import PageNotFoundEntry
 
 
 @receiver([post_save, post_delete], sender=PageNotFoundEntry)
-def invalidate_redirect_cache(
-    sender: type[PageNotFoundEntry], instance: PageNotFoundEntry, **_: Any
-) -> None:
+def invalidate_redirect_cache(sender: type[PageNotFoundEntry], instance: PageNotFoundEntry, **_: Any) -> None:
     clear_redirect_caches(instance.site_id)

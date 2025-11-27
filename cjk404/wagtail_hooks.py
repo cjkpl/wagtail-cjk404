@@ -13,6 +13,7 @@ from django.utils.functional import cached_property
 from django.utils.html import format_html
 from django_filters import BooleanFilter
 from django_filters import DateTimeFromToRangeFilter
+from django_filters import ModelChoiceFilter
 from wagtail import hooks
 from wagtail.admin.filters import DateRangePickerWidget
 from wagtail.admin.filters import WagtailFilterSet
@@ -54,18 +55,9 @@ def multiple_sites_exist() -> bool:
 
 
 class PageNotFoundEntryFilterSet(WagtailFilterSet):
-    created = DateTimeFromToRangeFilter(
-        label="Created Date Range",
-        widget=DateRangePickerWidget,
-    )
-    last_hit = DateTimeFromToRangeFilter(
-        label="Last Accessed Date Range",
-        widget=DateRangePickerWidget,
-    )
-    updated = DateTimeFromToRangeFilter(
-        label="Updated Date Range",
-        widget=DateRangePickerWidget,
-    )
+    site = ModelChoiceFilter(field_name="site", queryset=Site.objects.all(), label="Website")
+    is_active = BooleanFilter(field_name="is_active", label="Is Active?")
+    regular_expression = BooleanFilter(field_name="regular_expression", label="Regular Expression")
     builtin_redirect = BooleanFilter(
         label="Is Built-In Redirect?",
         method="filter_builtin_redirect",
@@ -78,16 +70,39 @@ class PageNotFoundEntryFilterSet(WagtailFilterSet):
         label="Is Declared Redirect to Page?",
         method="filter_redirect_to_page_present",
     )
+    last_hit = DateTimeFromToRangeFilter(
+        label="Last Accessed Date Range",
+        widget=DateRangePickerWidget,
+    )
+    created = DateTimeFromToRangeFilter(
+        label="Created Date Range",
+        widget=DateRangePickerWidget,
+    )
+    updated = DateTimeFromToRangeFilter(
+        label="Updated Date Range",
+        widget=DateRangePickerWidget,
+    )
+    permanent = BooleanFilter(field_name="permanent", label="Permanent")
+    fallback_redirect = BooleanFilter(
+        field_name="fallback_redirect",
+        label="Fallback Redirect",
+    )
 
     class Meta:
         model = PageNotFoundEntry
-        fields = {
-            "permanent": ["exact"],
-            "regular_expression": ["exact"],
-            "site": ["exact"],
-            "fallback_redirect": ["exact"],
-            "is_active": ["exact"],
-        }
+        fields = [
+            "site",
+            "is_active",
+            "regular_expression",
+            "builtin_redirect",
+            "redirect_to_url_present",
+            "redirect_to_page_present",
+            "last_hit",
+            "created",
+            "updated",
+            "permanent",
+            "fallback_redirect",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

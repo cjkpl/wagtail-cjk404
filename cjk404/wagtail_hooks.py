@@ -2,6 +2,7 @@ import pickle
 from functools import lru_cache
 from typing import List
 from typing import Optional
+from typing import Sequence
 
 from django.core.cache import cache
 from django.db.models import Q
@@ -15,9 +16,13 @@ from django_filters import DateTimeFromToRangeFilter
 from wagtail import hooks
 from wagtail.admin.filters import DateRangePickerWidget
 from wagtail.admin.filters import WagtailFilterSet
+from wagtail.admin.ui.components import Component
 from wagtail.admin.ui.components import MediaContainer
 from wagtail.admin.ui.tables import BooleanColumn
 from wagtail.admin.ui.tables import Column
+from wagtail.admin.ui.tables import TitleColumn
+from wagtail.admin.widgets.button import Button
+from wagtail.admin.widgets.button import ButtonWithDropdown
 from wagtail.admin.widgets.button import HeaderButton
 from wagtail.models import Site
 from wagtail.snippets.models import register_snippet
@@ -27,6 +32,7 @@ from wagtail.snippets.views.snippets import EditView
 from wagtail.snippets.views.snippets import IndexView
 from wagtail.snippets.views.snippets import SnippetViewSet
 
+from cjk404.builtin_redirects import BUILTIN_REDIRECTS
 from cjk404.builtin_redirects import builtin_redirect_status_for_site
 from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_KEY
 from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
@@ -35,6 +41,8 @@ from cjk404.models import PageNotFoundEntry
 from cjk404.views import clear_redirect_cache_view
 from cjk404.views import import_builtin_redirects_view
 from cjk404.views import toggle_redirect_activation_view
+from cjk404.views import toggle_redirect_fallback_view
+from cjk404.views import toggle_redirect_permanent_view
 
 
 @lru_cache(maxsize=1)
@@ -48,8 +56,16 @@ class PageNotFoundEntryFilterSet(WagtailFilterSet):
         widget=DateRangePickerWidget,
     )
     last_hit = DateTimeFromToRangeFilter(
+        label="Last Accessed Date Range",
+        widget=DateRangePickerWidget,
+    )
+    updated = DateTimeFromToRangeFilter(
         label="Updated Date Range",
         widget=DateRangePickerWidget,
+    )
+    builtin_redirect = BooleanFilter(
+        label="Is Built-In Redirect?",
+        method="filter_builtin_redirect",
     )
     redirect_to_url_present = BooleanFilter(
         label="Is Declared Redirect to URL?",
@@ -91,6 +107,26 @@ class PageNotFoundEntryFilterSet(WagtailFilterSet):
             return queryset.exclude(redirect_to_page__isnull=True)
         return queryset.filter(redirect_to_page__isnull=True)
 
+    def filter_builtin_redirect(self, queryset, name, value):
+        if value is None:
+            return queryset
+
+        builtin_regex_urls = [redirect.url for redirect in BUILTIN_REDIRECTS if redirect.regular_expression]
+        builtin_plain_urls = [redirect.url for redirect in BUILTIN_REDIRECTS if not redirect.regular_expression]
+
+        builtin_condition = Q()
+        if builtin_regex_urls:
+            builtin_condition |= Q(regular_expression=True, url__in=builtin_regex_urls)
+        if builtin_plain_urls:
+            builtin_condition |= Q(regular_expression=False, url__in=builtin_plain_urls)
+
+        if not builtin_condition:
+            return queryset
+
+        if value:
+            return queryset.filter(builtin_condition)
+        return queryset.exclude(builtin_condition)
+
 
 class _NoStatusHistoryMixin:
     def get_side_panels(self) -> MediaContainer:
@@ -113,6 +149,19 @@ class PageNotFoundEntryCopyView(_NoStatusHistoryMixin, CopyView):
 
 
 class PageNotFoundEntryIndexView(IndexView):
+    table_classname = "listing cjk404-listing"
+
+    def _get_title_column(self, field_name, column_class=TitleColumn, **kwargs):
+        if field_name == "__str__":
+            kwargs.setdefault("accessor", "title_with_host_display")
+            label = "Redirect from URL"
+        else:
+            label = None
+        column = super()._get_title_column(field_name, column_class, **kwargs)
+        if label:
+            column.label = label
+        return column
+
     @property
     def _sites(self) -> List[Site]:
         return list(
@@ -136,8 +185,8 @@ class PageNotFoundEntryIndexView(IndexView):
         return total_bytes / (1024 * 1024)
 
     @cached_property
-    def header_buttons(self):
-        buttons = []
+    def header_buttons(self) -> List[Component]:
+        buttons: List[Component] = []
         if self.add_url:
             buttons.append(
                 HeaderButton(
@@ -153,7 +202,9 @@ class PageNotFoundEntryIndexView(IndexView):
             return buttons
 
         multiple_sites_exist = len(sites) > 1
-        for order, site in enumerate(sites, start=1):
+        action_buttons: List[Button] = []
+
+        for site in sites:
             display_name = site.site_name or site.hostname or f"Site {site.id}"
             existing_count, total_count = builtin_redirect_status_for_site(site)
             import_url = reverse("cjk404-import-builtin-redirects")
@@ -164,14 +215,6 @@ class PageNotFoundEntryIndexView(IndexView):
                 if multiple_sites_exist
                 else f"Import Built-in Redirects ({existing_count}/{total_count})"
             )
-            buttons.append(
-                HeaderButton(
-                    import_label,
-                    url=import_url,
-                    icon_name="download",
-                    priority=200 + order,
-                )
-            )
 
             label = f"Clear Cache for {display_name}" if multiple_sites_exist else "Clear Cache"
             clear_cache_url = reverse("cjk404-clear-redirect-cache")
@@ -181,16 +224,48 @@ class PageNotFoundEntryIndexView(IndexView):
             size_mb = self._cache_size_mb(site.id)
             size_label = f" ({size_mb:.1f} MB)"
 
+            action_buttons.extend(
+                [
+                    Button(
+                        import_label,
+                        url=import_url,
+                        icon_name="download",
+                        priority=10,
+                    ),
+                    Button(
+                        f"{label}{size_label}",
+                        url=clear_cache_url,
+                        icon_name="cross",
+                        priority=20,
+                    ),
+                ]
+            )
+
+        if action_buttons:
             buttons.append(
-                HeaderButton(
-                    f"{label}{size_label}",
-                    url=clear_cache_url,
-                    icon_name="cross",
-                    priority=1000 + order,
+                self._build_action_dropdown(
+                    action_buttons,
+                    priority=200,
                 )
             )
 
         return buttons
+
+    def _build_action_dropdown(
+        self,
+        buttons: Sequence[Button],
+        *,
+        priority: int,
+    ) -> Component:
+
+        return ButtonWithDropdown(
+            label="",
+            icon_name="dots-horizontal",
+            buttons=sorted(buttons),
+            priority=priority,
+            classname="w-inline-block",
+            attrs={"aria-label": "Redirect Actions"},
+        )
 
 
 class PageNotFoundEntryViewSet(SnippetViewSet):
@@ -208,7 +283,7 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
     filterset_class = PageNotFoundEntryFilterSet
 
     def _get_list_display(self):
-        columns = ["url"]
+        columns = ["__str__"]
         if multiple_sites_exist():
             columns.append(
                 Column(
@@ -221,36 +296,32 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
         columns.extend(
             [
                 Column(
+                    "redirect_to_target_link",
+                    label="Redirect to Page or URL",
+                    accessor=lambda obj: obj.redirect_to_target_link(),
+                ),
+                Column(
                     "active_status_badge",
                     label="Is Active?",
                     accessor="active_status_badge",
                     sort_key="is_active",
                 ),
-                Column(
-                    "activation_toggle_button",
-                    label="",
-                    accessor="activation_toggle_button",
-                ),
                 Column("hits", label="Number of Views", sort_key="hits"),
-                Column(
-                    "redirect_to_url_link",
-                    label="Redirect to URL",
-                    accessor="redirect_to_url_link",
-                ),
-                Column(
-                    "redirect_to_page_link",
-                    label="Redirect to Page",
-                    accessor="redirect_to_page_link",
-                ),
                 BooleanColumn(
                     "regular_expression",
                     label="Regular Expression",
                     sort_key="regular_expression",
                 ),
-                BooleanColumn("permanent", label="Permanent", sort_key="permanent"),
-                BooleanColumn(
-                    "fallback_redirect",
-                    label="Fallback Redirect",
+                Column(
+                    "permanent_status_badge",
+                    label="Permanent",
+                    accessor="permanent_status_badge",
+                    sort_key="permanent",
+                ),
+                Column(
+                    "fallback_status_badge",
+                    label="Fallback",
+                    accessor="fallback_status_badge",
                     sort_key="fallback_redirect",
                 ),
                 Column(
@@ -269,7 +340,7 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
                     "formatted_updated_date",
                     label="Updated Date",
                     accessor="formatted_updated_date",
-                    sort_key="last_hit",
+                    sort_key="updated",
                 ),
             ]
         )
@@ -301,6 +372,21 @@ def register_cjk404_admin_urls():
             toggle_redirect_activation_view,
             name="cjk404-toggle-redirect",
         ),
+        path(
+            "cjk404/redirects/<int:pk>/toggle-active/",
+            toggle_redirect_activation_view,
+            name="cjk404-toggle-active",
+        ),
+        path(
+            "cjk404/redirects/<int:pk>/toggle-permanent/",
+            toggle_redirect_permanent_view,
+            name="cjk404-toggle-permanent",
+        ),
+        path(
+            "cjk404/redirects/<int:pk>/toggle-fallback/",
+            toggle_redirect_fallback_view,
+            name="cjk404-toggle-fallback",
+        ),
     ]
 
 
@@ -309,4 +395,12 @@ def add_redirect_toggle_js():
     return format_html(
         '<script src="{}"></script>',
         static("cjk404/js/redirect_toggle.js"),
+    )
+
+
+@hooks.register("insert_global_admin_css")
+def add_cjk404_admin_css():
+    return format_html(
+        '<link rel="stylesheet" href="{}">',
+        static("cjk404/css/admin.css"),
     )

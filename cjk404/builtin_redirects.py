@@ -43,8 +43,6 @@ BUILTIN_REDIRECTS: Tuple[BuiltinRedirect, ...] = (
     BuiltinRedirect(url=r"^/\.svn(?:/.*)?$", regular_expression=True),
     BuiltinRedirect(url=r"^/.*\.aws(?:\?.*)?$", regular_expression=True),
     BuiltinRedirect(url=r"^/node_modules/.*", regular_expression=True),
-    BuiltinRedirect(url=r".*pg_sleep.*", regular_expression=True),
-    BuiltinRedirect(url=r".*information_schema.*", regular_expression=True),
     BuiltinRedirect(url=r".*/phpmyadmin.*", regular_expression=True),
     BuiltinRedirect(url=r".*wp-includes.*", regular_expression=True),
     BuiltinRedirect(url=r".*wp-admin.*", regular_expression=True),
@@ -58,6 +56,38 @@ BUILTIN_REDIRECTS: Tuple[BuiltinRedirect, ...] = (
     BuiltinRedirect(url=r".*\.bak(?:\?.*)?$", regular_expression=True),
     BuiltinRedirect(
         url=r"^/(?:backup|db|dump|database|site|www)\.(?:sql|sqlite3?|zip|tar|tgz|gz|7z|bak)(?:\?.*)?$",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*union(?:\s+all)?\s+select.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*(?:'|\")\s*or\s*1\s*=\s*1.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*(?:sleep|benchmark|pg_sleep)\s*\(.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*load_file\s*\(.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*@@(?:version|hostname).*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*information_schema.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*xp_cmdshell.*",
+        regular_expression=True,
+    ),
+    BuiltinRedirect(
+        url=r"(?i).*(?:;|%3b)\s*(?:drop|truncate|shutdown|delete)\s+.*",
         regular_expression=True,
     ),
 )

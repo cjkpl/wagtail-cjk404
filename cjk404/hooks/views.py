@@ -14,10 +14,16 @@ from wagtail.admin.ui.components import MediaContainer
 from wagtail.admin.ui.tables import BooleanColumn
 from wagtail.admin.ui.tables import Column
 from wagtail.admin.ui.tables import TitleColumn
-from wagtail.admin.widgets.button import BaseButton
-from wagtail.admin.widgets.button import Button
-from wagtail.admin.widgets.button import ButtonWithDropdown
-from wagtail.admin.widgets.button import HeaderButton
+try:
+    from wagtail.admin.widgets.button import BaseButton
+    from wagtail.admin.widgets.button import Button
+    from wagtail.admin.widgets.button import ButtonWithDropdown
+    from wagtail.admin.widgets.button import HeaderButton
+except ImportError:  # pragma: no cover - compatibility for Wagtail versions without BaseButton
+    BaseButton = None  # type: ignore[assignment]
+    from wagtail.admin.widgets.button import Button
+    from wagtail.admin.widgets.button import ButtonWithDropdown
+    from wagtail.admin.widgets.button import HeaderButton
 from wagtail.models import Site
 from wagtail.snippets.models import register_snippet
 from wagtail.snippets.views.snippets import CopyView
@@ -103,20 +109,27 @@ class PageNotFoundEntryIndexView(IndexView):
 
     def get_list_buttons(self, instance):
         next_url = self.request.get_full_path()
-        list_buttons = []
-        more_buttons = []
+        list_buttons: list[Component] = []
+        more_buttons: list[Component] = []
 
         buttons = self.get_list_more_buttons(instance)
         for hook in hooks.get_hooks("register_snippet_listing_buttons"):
             buttons.extend(hook(instance, self.request.user, next_url))
 
         for button in buttons:
-            if isinstance(button, BaseButton) and not button.allow_in_dropdown:
-                list_buttons.append(button)
+            allow_in_dropdown = getattr(button, "allow_in_dropdown", True)
+            is_visible = getattr(button, "show", True)
+            if BaseButton is not None and isinstance(button, BaseButton):
+                if not allow_in_dropdown:
+                    list_buttons.append(button)
+                elif is_visible:
+                    more_buttons.append(button)
             elif isinstance(button, MenuItem):
                 if button.is_shown(self.request.user):
                     more_buttons.append(Button.from_menu_item(button))
-            elif button.show:
+            elif not allow_in_dropdown:
+                list_buttons.append(button)
+            elif is_visible:
                 more_buttons.append(button)
 
         for hook in hooks.get_hooks("construct_snippet_listing_buttons"):

@@ -172,3 +172,83 @@ class CleanRedirectsCommandTests(BaseCjk404TestCase):
         with patch("builtins.input", side_effect=["999"]):
             result = call_command("clean_redirects")
             self.assertEqual(result, "")
+
+
+class ActivateBuiltinRedirectsCommandTests(BaseCjk404TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        default_site = Site.objects.first()
+        assert default_site is not None
+        default_site.site_name = "First Site"
+        default_site.save()
+        self.default_site: Site = default_site
+
+    def _import_builtins(self, site: Site) -> None:
+        call_command("import_builtin_redirects", site_id=site.id)
+
+    def test_activates_imported_regex_redirects_to_root_page(self) -> None:
+        assert self.default_site is not None
+        self._import_builtins(self.default_site)
+        call_command("activate_builtin_redirects", site_id=self.default_site.id)
+        entries = PageNotFoundEntry.objects.filter(site=self.default_site, regular_expression=True)
+        self.assertTrue(entries.exists())
+        for entry in entries:
+            self.assertTrue(entry.is_active)
+            self.assertEqual(entry.redirect_to_page_id, self.default_site.root_page_id)
+            self.assertIsNone(entry.redirect_to_url)
+
+    def test_falls_back_to_root_url_when_root_page_missing(self) -> None:
+        assert self.default_site is not None
+        self._import_builtins(self.default_site)
+        with patch(
+            "cjk404.management.commands.activate_builtin_redirects.Command._get_target_page",
+            return_value=None,
+        ):
+            call_command("activate_builtin_redirects", site_id=self.default_site.id)
+        entries = PageNotFoundEntry.objects.filter(site=self.default_site, regular_expression=True)
+        self.assertTrue(entries.exists())
+        for entry in entries:
+            self.assertTrue(entry.is_active)
+            self.assertIsNone(entry.redirect_to_page)
+            self.assertEqual(entry.redirect_to_url, "/")
+
+    def test_prompts_for_site_and_updates_only_chosen_site(self) -> None:
+        second_site = self.create_site("second.example.com")
+        second_site.site_name = "Second Site"
+        second_site.save()
+        self._import_builtins(self.default_site)
+        self._import_builtins(second_site)
+        with patch("builtins.input", side_effect=["2"]):
+            call_command("activate_builtin_redirects")
+        default_entries = PageNotFoundEntry.objects.filter(site=self.default_site)
+        second_entries = PageNotFoundEntry.objects.filter(site=second_site)
+        self.assertTrue(default_entries.exists())
+        self.assertTrue(second_entries.exists())
+        self.assertTrue(all(not entry.is_active for entry in default_entries))
+        self.assertTrue(all(entry.is_active for entry in second_entries))
+
+    def test_does_not_overwrite_existing_targets(self) -> None:
+        assert self.default_site is not None
+        self._import_builtins(self.default_site)
+        entry_with_page = PageNotFoundEntry.objects.filter(
+            site=self.default_site, regular_expression=True
+        ).first()
+        assert entry_with_page is not None
+        target_page = self.create_and_publish_page(self.default_site.root_page, "Custom", "custom")
+        entry_with_page.redirect_to_page = target_page
+        entry_with_page.is_active = False
+        entry_with_page.save()
+        entry_with_url = PageNotFoundEntry.objects.filter(
+            site=self.default_site, regular_expression=True
+        ).last()
+        assert entry_with_url is not None
+        entry_with_url.redirect_to_url = "/keep"
+        entry_with_url.is_active = False
+        entry_with_url.save()
+        call_command("activate_builtin_redirects", site_id=self.default_site.id)
+        entry_with_page.refresh_from_db()
+        entry_with_url.refresh_from_db()
+        self.assertEqual(entry_with_page.redirect_to_page, target_page)
+        self.assertFalse(entry_with_page.is_active)
+        self.assertEqual(entry_with_url.redirect_to_url, "/keep")
+        self.assertFalse(entry_with_url.is_active)

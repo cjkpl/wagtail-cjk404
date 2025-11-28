@@ -1,24 +1,22 @@
 (function () {
-    function readCsrfToken() {
-        if (window.wagtailConfig && window.wagtailConfig.CSRF_TOKEN) {
-            return window.wagtailConfig.CSRF_TOKEN;
-        }
-        const metaToken = document.querySelector('meta[name="csrf-token"]');
-        if (metaToken && metaToken.content) {
-            return metaToken.content;
-        }
-        const inputToken = document.querySelector('input[name="csrfmiddlewaretoken"]');
-        if (inputToken && inputToken.value) {
-            return inputToken.value;
-        }
-        const cookies = document.cookie ? document.cookie.split('; ') : [];
-        for (let i = 0; i < cookies.length; i += 1) {
-            const [key, value] = cookies[i].split('=');
-            if (key === 'csrftoken') {
-                return decodeURIComponent(value);
-            }
-        }
-        return '';
+    function readCsrf() {
+        const cfg = window.wagtailConfig || {};
+        const headerName = cfg.CSRF_HEADER_NAME || 'X-CSRFToken';
+        const token = cfg.CSRF_TOKEN
+            || (document.querySelector('meta[name="csrf-token"]') || {}).content
+            || (document.querySelector('input[name="csrfmiddlewaretoken"]') || {}).value
+            || (() => {
+                const cookies = document.cookie ? document.cookie.split('; ') : [];
+                for (let i = 0; i < cookies.length; i += 1) {
+                    const [key, value] = cookies[i].split('=');
+                    if (key === 'csrftoken') {
+                        return decodeURIComponent(value);
+                    }
+                }
+                return '';
+            })();
+
+        return { headerName, token };
     }
 
     function replaceWithHtml(selector, html) {
@@ -43,17 +41,27 @@
             return;
         }
         try {
+            const { headerName, token } = readCsrf();
+            if (!token) {
+                throw new Error('Missing CSRF Token');
+            }
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                    'X-CSRFToken': readCsrfToken(),
+                    [headerName]: token,
                     'X-Requested-With': 'XMLHttpRequest',
-                    Accept: 'application/json',
+                    Accept: 'application/json, text/plain, */*',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 },
-                credentials: 'same-origin',
+                body: new URLSearchParams({ csrfmiddlewaretoken: token }).toString(),
+                credentials: 'include',
+                mode: 'same-origin',
+                referrerPolicy: 'same-origin',
             });
             if (!response.ok) {
-                throw new Error(`Toggle Failed (${response.status})`);
+                const detail = await response.text().catch(() => '');
+                const message = detail ? `Toggle Failed (${response.status}) — ${detail}` : `Toggle Failed (${response.status})`;
+                throw new Error(message);
             }
             const data = await response.json();
             if (!data || data.ok !== true) {

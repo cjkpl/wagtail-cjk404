@@ -1,5 +1,7 @@
 import pickle
-from typing import List, Optional, Sequence
+from typing import List
+from typing import Optional
+from typing import Sequence
 
 from django.core.cache import cache
 from django.templatetags.static import static
@@ -7,27 +9,43 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 from django.utils.html import format_html
 from wagtail import hooks
-from wagtail.admin.ui.components import Component, MediaContainer
-from wagtail.admin.ui.menus import MenuItem
-from wagtail.admin.ui.tables import BooleanColumn, Column, TitleColumn
-from wagtail.admin.widgets.button import BaseButton, Button, ButtonWithDropdown, HeaderButton
+from wagtail.admin.ui.components import Component
+from wagtail.admin.ui.components import MediaContainer
+from wagtail.admin.ui.tables import BooleanColumn
+from wagtail.admin.ui.tables import Column
+from wagtail.admin.ui.tables import TitleColumn
+from wagtail.admin.widgets.button import BaseButton
+from wagtail.admin.widgets.button import Button
+from wagtail.admin.widgets.button import ButtonWithDropdown
+from wagtail.admin.widgets.button import HeaderButton
 from wagtail.models import Site
 from wagtail.snippets.models import register_snippet
-from wagtail.snippets.views.snippets import CopyView, CreateView, DeleteView, EditView, IndexView, SnippetViewSet
+from wagtail.snippets.views.snippets import CopyView
+from wagtail.snippets.views.snippets import CreateView
+from wagtail.snippets.views.snippets import DeleteView
+from wagtail.snippets.views.snippets import EditView
+from wagtail.snippets.views.snippets import IndexView
+from wagtail.snippets.views.snippets import SnippetViewSet
 
-from cjk404.builtin_redirects import BUILTIN_REDIRECTS, builtin_redirect_status_for_site
-from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_KEY, DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY, build_cache_key
+try:
+    from wagtail.admin.ui.menus import MenuItem
+except ModuleNotFoundError:  # pragma: no cover - compatibility for Wagtail <= 5.2
+    from wagtail.admin.menu import MenuItem  # type: ignore[assignment]
+
+from cjk404.builtin_redirects import BUILTIN_REDIRECTS
+from cjk404.builtin_redirects import builtin_redirect_status_for_site
+from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_KEY
+from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
+from cjk404.cache import build_cache_key
 from cjk404.hooks.filters import PageNotFoundEntryFilterSet
 from cjk404.hooks.tables import SiteColorTable
 from cjk404.hooks.utils import multiple_sites_exist
 from cjk404.models import PageNotFoundEntry
-from cjk404.views import (
-    clear_redirect_cache_view,
-    import_builtin_redirects_view,
-    toggle_redirect_activation_view,
-    toggle_redirect_fallback_view,
-    toggle_redirect_permanent_view,
-)
+from cjk404.views import clear_redirect_cache_view
+from cjk404.views import import_builtin_redirects_view
+from cjk404.views import toggle_redirect_activation_view
+from cjk404.views import toggle_redirect_fallback_view
+from cjk404.views import toggle_redirect_permanent_view
 
 
 class _NoStatusHistoryMixin:

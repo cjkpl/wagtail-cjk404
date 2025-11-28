@@ -1,13 +1,24 @@
 (function () {
-    function getCookie(name) {
+    function readCsrfToken() {
+        if (window.wagtailConfig && window.wagtailConfig.CSRF_TOKEN) {
+            return window.wagtailConfig.CSRF_TOKEN;
+        }
+        const metaToken = document.querySelector('meta[name="csrf-token"]');
+        if (metaToken && metaToken.content) {
+            return metaToken.content;
+        }
+        const inputToken = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (inputToken && inputToken.value) {
+            return inputToken.value;
+        }
         const cookies = document.cookie ? document.cookie.split('; ') : [];
         for (let i = 0; i < cookies.length; i += 1) {
             const [key, value] = cookies[i].split('=');
-            if (key === name) {
+            if (key === 'csrftoken') {
                 return decodeURIComponent(value);
             }
         }
-        return null;
+        return '';
     }
 
     function replaceWithHtml(selector, html) {
@@ -35,9 +46,11 @@
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                    'X-CSRFToken': getCookie('csrftoken') || '',
+                    'X-CSRFToken': readCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
                     Accept: 'application/json',
                 },
+                credentials: 'same-origin',
             });
             if (!response.ok) {
                 throw new Error(`Toggle Failed (${response.status})`);

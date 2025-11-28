@@ -18,6 +18,7 @@ from wagtail.snippets.views.snippets import CopyView, CreateView, DeleteView, Ed
 from cjk404.builtin_redirects import BUILTIN_REDIRECTS, builtin_redirect_status_for_site
 from cjk404.cache import DJANGO_REGEX_REDIRECTS_CACHE_KEY, DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY, build_cache_key
 from cjk404.hooks.filters import PageNotFoundEntryFilterSet
+from cjk404.hooks.tables import SiteColorTable
 from cjk404.hooks.utils import multiple_sites_exist
 from cjk404.models import PageNotFoundEntry
 from cjk404.views import (
@@ -58,6 +59,29 @@ class PageNotFoundEntryDeleteView(DeleteView):
 
 class PageNotFoundEntryIndexView(IndexView):
     table_classname = "listing cjk404-listing"
+    table_class = SiteColorTable
+
+    @cached_property
+    def _site_color_map(self) -> dict[int, str]:
+        colors = ["#262626", "#201F1F", "#1C1A1A", "#161414"]
+        mapping: dict[int, str] = {}
+        for idx, site in enumerate(self._sites):
+            if site.id is None:
+                continue
+            mapping[site.id] = colors[min(idx, len(colors) - 1)]
+        return mapping
+
+    def _row_attrs_for_instance(self, instance):
+        attrs = {}
+        site_id = getattr(instance, "site_id", None)
+        if site_id in self._site_color_map:
+            attrs["style"] = f"background: {self._site_color_map[site_id]};"
+        return attrs
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["row_attr_func"] = self._row_attrs_for_instance
+        return kwargs
 
     def get_list_buttons(self, instance):
         next_url = self.request.get_full_path()
@@ -85,7 +109,7 @@ class PageNotFoundEntryIndexView(IndexView):
                 ButtonWithDropdown(
                     buttons=more_buttons,
                     icon_name="dots-horizontal",
-                    attrs={"aria-label": "More options"},
+                    attrs={"aria-label": "More Options"},
                 )
             )
 
@@ -148,6 +172,8 @@ class PageNotFoundEntryIndexView(IndexView):
             return buttons
 
         multiple_sites = len(sites) > 1
+        combined_action_buttons: List[Button] = []
+
         for order, site in enumerate(sites, start=1):
             display_name = site.site_name or site.hostname or f"Site {site.id}"
             existing_count, total_count = builtin_redirect_status_for_site(site)
@@ -168,26 +194,32 @@ class PageNotFoundEntryIndexView(IndexView):
             size_mb = self._cache_size_mb(site.id)
             size_label = f" ({size_mb:.1f} MB)"
 
-            action_buttons: List[Button] = [
-                Button(
-                    import_label,
-                    url=import_url,
-                    icon_name="download",
-                    priority=10,
-                ),
-                Button(
-                    f"{label}{size_label}",
-                    url=clear_cache_url,
-                    icon_name="cross",
-                    priority=20,
-                ),
-            ]
+            combined_action_buttons.extend(
+                [
+                    Button(
+                        import_label,
+                        url=import_url,
+                        icon_name="download",
+                        priority=order * 10 + 1,
+                    ),
+                    Button(
+                        f"{label}{size_label}",
+                        url=clear_cache_url,
+                        icon_name="cross",
+                        priority=order * 10 + 2,
+                    ),
+                ]
+            )
 
+        if combined_action_buttons:
             buttons.append(
-                self._build_action_dropdown(
-                    action_buttons,
-                    display_name=display_name,
-                    priority=200 + order,
+                ButtonWithDropdown(
+                    label="",
+                    icon_name="dots-horizontal",
+                    buttons=sorted(combined_action_buttons),
+                    priority=200,
+                    classname="w-inline-block",
+                    attrs={"aria-label": "Redirect actions"},
                 )
             )
 

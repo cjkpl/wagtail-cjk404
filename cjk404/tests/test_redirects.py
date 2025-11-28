@@ -22,7 +22,7 @@ class RedirectTests(BaseCjk404TestCase):
         self.assertEqual(
             response.status_code,
             assert_status,
-            f"Response status code: {response.status_code} != {assert_status}",
+            f"Response Status Code: {response.status_code} != {assert_status}",
         )
         self.assertRedirects(
             response,

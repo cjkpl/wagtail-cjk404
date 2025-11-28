@@ -57,9 +57,7 @@ class ClearRedirectCacheViewTests(BaseCjk404TestCase):
         site_ids: List[Optional[int]] = list(Site.objects.values_list("id", flat=True))
         site_ids.append(None)
         self._populate_cache(site_ids)
-
         response = self.client.get(reverse("cjk404-clear-redirect-cache"))
-
         self.assertEqual(response.status_code, 302)
         self._assert_cache_cleared(site_ids)
 
@@ -68,11 +66,9 @@ class ClearRedirectCacheViewTests(BaseCjk404TestCase):
         secondary_site = self.create_site("secondary.example.com")
         target_ids: List[Optional[int]] = [default_site_id, secondary_site.id, None]
         self._populate_cache(target_ids)
-
         response = self.client.get(
             reverse("cjk404-clear-redirect-cache"), {"site_id": secondary_site.id}
         )
-
         self.assertEqual(response.status_code, 302)
         self._assert_cache_cleared([secondary_site.id])
         self._assert_cache_present([default_site_id, None])
@@ -91,7 +87,6 @@ class ImportBuiltinRedirectsViewTests(BaseCjk404TestCase):
     def test_imports_all_sites_via_get(self) -> None:
         self.create_site("secondary.example.com")
         response = self.client.get(reverse("cjk404-import-builtin-redirects"))
-
         self.assertEqual(response.status_code, 302)
         site_count = Site.objects.count()
         self.assertEqual(
@@ -109,11 +104,9 @@ class ImportBuiltinRedirectsViewTests(BaseCjk404TestCase):
             regular_expression=built_in.regular_expression,
             is_active=True,
         )
-
         response = self.client.get(
             reverse("cjk404-import-builtin-redirects"), {"site_id": secondary_site.id}
         )
-
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             PageNotFoundEntry.objects.filter(site=secondary_site).count(),
@@ -126,7 +119,6 @@ class ImportBuiltinRedirectsViewTests(BaseCjk404TestCase):
 
     def test_import_invalid_site_is_safe(self) -> None:
         response = self.client.get(reverse("cjk404-import-builtin-redirects"), {"site_id": 99999})
-
         self.assertEqual(response.status_code, 302)
         self.assertEqual(PageNotFoundEntry.objects.count(), 0)
 
@@ -140,13 +132,11 @@ class ImportBuiltinRedirectsViewTests(BaseCjk404TestCase):
         list_url = reverse("wagtailsnippets_cjk404_pagenotfoundentry:list")
         response = self.client.get(list_url)
         self.assertContains(response, f"Import Built-in Redirects (0/{len(BUILTIN_REDIRECTS)})")
-
         built_in = BUILTIN_REDIRECTS[0]
         PageNotFoundEntry.objects.create(
             site=Site.objects.first(),
             url=built_in.url,
             regular_expression=built_in.regular_expression,
         )
-
         response = self.client.get(list_url)
         self.assertContains(response, f"Import Built-in Redirects (1/{len(BUILTIN_REDIRECTS)})")

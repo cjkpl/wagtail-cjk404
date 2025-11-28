@@ -73,7 +73,6 @@ class ImportBuiltinRedirectsCommandTests(BaseCjk404TestCase):
     def test_imports_for_all_sites(self) -> None:
         self.create_site("secondary.example.com")
         call_command("import_builtin_redirects")
-
         site_count = Site.objects.count()
         self.assertEqual(
             PageNotFoundEntry.objects.count(),
@@ -91,9 +90,7 @@ class ImportBuiltinRedirectsCommandTests(BaseCjk404TestCase):
             regular_expression=existing_redirect.regular_expression,
             is_active=True,
         )
-
         call_command("import_builtin_redirects", site_id=default_site.id)
-
         self.assertEqual(
             PageNotFoundEntry.objects.filter(site=default_site).count(),
             len(BUILTIN_REDIRECTS),
@@ -109,12 +106,10 @@ class ImportBuiltinRedirectsCommandTests(BaseCjk404TestCase):
             url="/example/",
             regular_expression=False,
         )
-
         result = import_builtin_redirects_for_site(
             default_site,
             redirects=[custom_redirect],
         )
-
         self.assertEqual(result.created, 0)
         self.assertEqual(result.skipped_urls, (custom_redirect.url,))
 
@@ -139,22 +134,19 @@ class CleanRedirectsCommandTests(BaseCjk404TestCase):
             redirect_to_url="/new",
             regular_expression=False,
         )
-
         with patch("builtins.input", side_effect=["3", "1"]):
             call_command("clean_redirects")
-
         self.assertFalse(PageNotFoundEntry.objects.filter(id=empty_match.id).exists())
         self.assertTrue(PageNotFoundEntry.objects.filter(id=with_target.id).exists())
 
     def test_deletes_all_when_option_two(self) -> None:
         entry = PageNotFoundEntry.objects.create(
             site=self.default_site,
-            url="/abc/pg_sleep/1",
+            url="/abc/pg_sleep(1",
             regular_expression=False,
         )
         with patch("builtins.input", side_effect=["3", "2"]):
             call_command("clean_redirects")
-
         self.assertFalse(PageNotFoundEntry.objects.filter(id=entry.id).exists())
 
     def test_site_prompt_deletes_only_target_site(self) -> None:
@@ -171,10 +163,8 @@ class CleanRedirectsCommandTests(BaseCjk404TestCase):
             url="/another.php",
             regular_expression=False,
         )
-
         with patch("builtins.input", side_effect=["2", "3", "2"]):
             call_command("clean_redirects")
-
         self.assertFalse(PageNotFoundEntry.objects.filter(id=target_entry.id).exists())
         self.assertTrue(PageNotFoundEntry.objects.filter(id=keep_entry.id).exists())
 

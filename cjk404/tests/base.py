@@ -30,12 +30,19 @@ class BaseCjk404TestCase(TestCase):
                 is_default_site=True,
             )
 
-    def create_site(self, hostname: str, *, is_default: bool = False) -> Site:
+    def create_site(self, hostname: str, *, is_default: bool = False, root_page: Optional[Page] = None) -> Site:
         return Site.objects.create(
             hostname=hostname,
-            root_page=self.root_page,
+            root_page=root_page or self.root_page,
             is_default_site=is_default,
         )
+
+    def create_and_publish_page(self, parent: Page, title: str, slug: str) -> Page:
+        page = Page(title=title, slug=slug)
+        parent.add_child(instance=page)
+        revision = page.save_revision()
+        revision.publish()
+        return page
 
     def create_redirect(
         self,

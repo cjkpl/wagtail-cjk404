@@ -2,20 +2,21 @@
 
 ## Description
 
-Multi-site redirect manager for `Wagtail` with `Regular Expression` support, built-in patterns feature, and redirects cache.
+Multi-site redirect manager for `Wagtail` with `Regular Expression` support, built-in patterns feature and redirects cache.
 
-## Features
+![List of Redirects.jpg](docs/screenshots/List%20of%20Redirects.jpg)
 
-- Automatic `404 - Not Found` Capture with Per-Site Logging
-- Redirect to `Wagtail` Pages or External `URLs`
-- Supports Permanent (`301`) and Temporary (`302`) Responses
-- `Regular Expression` Patterns Support
-- Entries Listing with Status Badges, Filters and Dynamic Toggle Buttons
-- `Django Management Commands` to Import Built-In `Regular Expression` Redirects and Clear Cache
+![New Redirect.jpg](docs/screenshots/New%20Redirect.jpg)
 
 ### [Installation](docs/Installation.md)
 
 ### [Django Management Commands](docs/Django%20Management%20Commands.md)
+
+### Testing
+
+```bash
+(cd wagtail-cjk404/testproject && DJANGO_SETTINGS_MODULE=testproject.settings.base pytest ../cjk404/tests --disable-pytest-warnings)
+```
 
 ## Authors
 

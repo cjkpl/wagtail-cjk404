@@ -2,6 +2,6 @@
 
 | Command                    | Required Arguments | Optional Arguments |
 |----------------------------|--------------------|--------------------|
-| `clean_redirects`          | `None`             | `None`             |
-| `clear_redirect_cache`     | `None`             | `--site-id <int>`  |
-| `import_builtin_redirects` | `None`             | `--site-id <int>`  |
+| `clean_redirects`          | -                  | -                  |
+| `clear_redirect_cache`     | -                  | `--site-id <int>`  |
+| `import_builtin_redirects` | -                  | `--site-id <int>`  |

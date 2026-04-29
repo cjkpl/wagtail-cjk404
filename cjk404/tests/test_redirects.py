@@ -4,6 +4,7 @@ from typing import Optional
 from unittest.mock import PropertyMock, patch
 
 from django.test import override_settings
+from wagtail.models import Site
 
 from cjk404.tests.base import BaseCjk404TestCase
 
@@ -166,3 +167,14 @@ class RedirectTests(BaseCjk404TestCase):
         self.redirect_url("/admin.php", "/admin-target/", 302, 404)
         specific_redirect.refresh_from_db()
         self.assertEqual(specific_redirect.hits, 1)
+
+    @override_settings(CJK404_MAX_REQUEST_URL_LENGTH=1000)
+    def test_overlong_url_returns_414_and_is_not_saved(self) -> None:
+        overlong_path = f"/{'a' * 1001}"
+        response = self.client.get(overlong_path)
+        self.assertEqual(response.status_code, 414)
+        site = Site.objects.filter(is_default_site=True).first()
+        self.assertIsNotNone(site)
+        self.assertFalse(
+            site.pagenotfound_entries.filter(url=overlong_path).exists()  # type: ignore[union-attr]
+        )

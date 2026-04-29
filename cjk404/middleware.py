@@ -1,4 +1,5 @@
 import re
+import logging
 from typing import Any
 from typing import Callable
 from typing import Mapping
@@ -21,6 +22,7 @@ from cjk404.cache import build_cache_key
 from cjk404.models import PageNotFoundEntry
 
 IGNORED_404S = getattr(settings, "IGNORED_404S", [r"^/static/", r"^/favicon.ico"])
+logger = logging.getLogger(__name__)
 
 
 class PageNotFoundRedirectMiddleware:
@@ -98,6 +100,19 @@ class PageNotFoundRedirectMiddleware:
         site = Site.find_for_request(request)
         site_id = getattr(site, "pk", None)
         full_path = request.get_full_path()
+        max_url_length = getattr(
+            settings,
+            "CJK404_MAX_REQUEST_URL_LENGTH",
+            PageNotFoundEntry._meta.get_field("url").max_length,
+        )
+        if len(full_path) > max_url_length:
+            logger.warning(
+                "Blocked overlong URL request path (length=%s, limit=%s, path=%r)",
+                len(full_path),
+                max_url_length,
+                full_path[:256],
+            )
+            return HttpResponse(status=414)
 
         redirects_cache_key = self._cache_key(DJANGO_REGEX_REDIRECTS_CACHE_KEY, site_id)
         redirects = cache.get(redirects_cache_key)

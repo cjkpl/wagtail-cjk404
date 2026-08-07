@@ -1,13 +1,14 @@
-import re
 import logging
-from typing import Any
+import re
 from typing import Callable
-from typing import Mapping
+from typing import NamedTuple
 from typing import Optional
+from typing import cast
 
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import F
+from django.db.models import Q
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.http import HttpResponsePermanentRedirect
@@ -23,6 +24,14 @@ from cjk404.models import PageNotFoundEntry
 
 IGNORED_404S = getattr(settings, "IGNORED_404S", [r"^/static/", r"^/favicon.ico"])
 logger = logging.getLogger(__name__)
+
+
+class RedirectDefinition(NamedTuple):
+    entry_id: int
+    source_url: str
+    redirect_to_url: Optional[str]
+    redirect_to_page_id: Optional[int]
+    permanent: bool
 
 
 class PageNotFoundRedirectMiddleware:
@@ -68,14 +77,14 @@ class PageNotFoundRedirectMiddleware:
             return HttpResponsePermanentRedirect(location)
         return HttpResponseRedirect(location)
 
-    def get_redirect_to_page_or_url(self, redirect: Mapping[str, Any]) -> Optional[str]:
-        redirect_to_page_id = redirect.get("redirect_to_page_id")
+    def get_redirect_to_page_or_url(self, redirect: RedirectDefinition) -> Optional[str]:
+        redirect_to_page_id = redirect.redirect_to_page_id
         if redirect_to_page_id is None:
-            redirect_to_url = redirect.get("redirect_to_url")
-            return str(redirect_to_url) if redirect_to_url else None
+            return redirect.redirect_to_url
         try:
             entry = PageNotFoundEntry.objects.get(
-                redirect_to_page_id=redirect_to_page_id, id=redirect["id"]
+                redirect_to_page_id=redirect_to_page_id,
+                id=redirect.entry_id,
             )
             try:
                 page_url = entry.redirect_to_page.url
@@ -83,13 +92,92 @@ class PageNotFoundRedirectMiddleware:
                 page_url = None
             if page_url:
                 return page_url
-            fallback_url = entry.redirect_to_url or redirect.get("redirect_to_url")
+            fallback_url = entry.redirect_to_url or redirect.redirect_to_url
             return fallback_url
         except PageNotFoundEntry.DoesNotExist:
-            return redirect.get("redirect_to_url")
+            return redirect.redirect_to_url
 
     def _cache_key(self, base_key: str, site_id: Optional[int]) -> str:
         return build_cache_key(base_key, site_id)
+
+    def _get_cached_redirects(
+        self,
+        *,
+        site_id: int,
+        regular_expression: bool,
+    ) -> list[RedirectDefinition]:
+        base_cache_key = (
+            DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY
+            if regular_expression
+            else DJANGO_REGEX_REDIRECTS_CACHE_KEY
+        )
+        cache_key = self._cache_key(base_cache_key, site_id)
+        cached_redirects = cache.get(cache_key)
+        if cached_redirects is not None:
+            return cast(list[RedirectDefinition], cached_redirects)
+
+        redirect_target_filter = Q(redirect_to_page_id__isnull=False) | (
+            Q(redirect_to_url__isnull=False) & ~Q(redirect_to_url="")
+        )
+        redirect_rows = (
+            PageNotFoundEntry.objects.filter(
+                site_id=site_id,
+                is_active=True,
+                regular_expression=regular_expression,
+            )
+            .filter(redirect_target_filter)
+            .order_by("fallback_redirect", "id")
+            .values_list(
+                "id",
+                "url",
+                "redirect_to_url",
+                "redirect_to_page_id",
+                "permanent",
+            )
+            .iterator(chunk_size=500)
+        )
+        redirects = [
+            RedirectDefinition(
+                entry_id=row[0],
+                source_url=row[1],
+                redirect_to_url=row[2],
+                redirect_to_page_id=row[3],
+                permanent=row[4],
+            )
+            for row in redirect_rows
+        ]
+        cache.set(
+            cache_key,
+            redirects,
+            DJANGO_REGEX_REDIRECTS_CACHE_TIMEOUT,
+        )
+        return redirects
+
+    def _record_not_found(self, site: Site, url: str) -> None:
+        url_variants = PageNotFoundEntry.build_url_variants(
+            url,
+            append_slash=bool(settings.APPEND_SLASH),
+        )
+        existing_entry = (
+            PageNotFoundEntry.objects.filter(site=site, url__in=url_variants)
+            .order_by("id")
+            .values_list(
+                "id",
+                "redirect_to_page_id",
+                "redirect_to_url",
+                "regular_expression",
+            )
+            .first()
+        )
+        if existing_entry is not None:
+            entry_id, redirect_to_page_id, redirect_to_url, regular_expression = existing_entry
+            is_logged_404 = (
+                redirect_to_page_id is None and not redirect_to_url and not regular_expression
+            )
+            if is_logged_404:
+                self.update_hit_count(entry_id)
+            return
+        PageNotFoundEntry.objects.create(site=site, url=url, hits=1)
 
     def handle_request(self, request: HttpRequest) -> HttpResponse:
         response = self.response(request)
@@ -107,87 +195,52 @@ class PageNotFoundRedirectMiddleware:
         )
         if len(full_path) > max_url_length:
             logger.warning(
-                "Blocked overlong URL request path (length=%s, limit=%s, path=%r)",
+                "Blocked Overlong URL Request Path (length=%s, limit=%s, path=%r)",
                 len(full_path),
                 max_url_length,
                 full_path[:256],
             )
             return HttpResponse(status=414)
 
-        redirects_cache_key = self._cache_key(DJANGO_REGEX_REDIRECTS_CACHE_KEY, site_id)
-        redirects = cache.get(redirects_cache_key)
-        if redirects is None:
-            base_redirects = PageNotFoundEntry.objects.all()
-            if site_id is not None:
-                base_redirects = base_redirects.filter(site_id=site_id)
-            redirects = list(base_redirects.order_by("fallback_redirect").values())
-            cache.set(
-                redirects_cache_key,
-                redirects,
-                DJANGO_REGEX_REDIRECTS_CACHE_TIMEOUT,
-            )
+        if site is None or site_id is None:
+            return response
 
+        redirects = self._get_cached_redirects(
+            site_id=site_id,
+            regular_expression=False,
+        )
+        exact_urls = {full_path}
+        if settings.APPEND_SLASH and not request.path.endswith("/"):
+            path_len = len(request.path)
+            exact_urls.add(f"{full_path[:path_len]}/{full_path[path_len:]}")
         for redirect in redirects:
-            if redirect["url"] == full_path:
-                self.update_hit_count(redirect["id"])
-                target_redirect_url = self.get_redirect_to_page_or_url(redirect)
-                return (
-                    self.HttpRedirect301302(request, target_redirect_url, redirect["permanent"])
-                    if target_redirect_url
-                    else response
-                )
-            if settings.APPEND_SLASH and not request.path.endswith("/"):
-                path_len = len(request.path)
-                slashed_full_path = f"{full_path[:path_len]}/{full_path[path_len:]}"
-                if redirect["url"] == slashed_full_path:
-                    self.update_hit_count(redirect["id"])
-                    target_redirect_url = self.get_redirect_to_page_or_url(redirect)
-                    return (
-                        self.HttpRedirect301302(request, target_redirect_url, redirect["permanent"])
-                        if target_redirect_url
-                        else response
-                    )
-        regex_cache_key = self._cache_key(DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY, site_id)
-        regular_expressions_redirects = cache.get(regex_cache_key)
-        if regular_expressions_redirects is None:
-            regex_redirects = PageNotFoundEntry.objects.filter(regular_expression=True)
-            if site_id is not None:
-                regex_redirects = regex_redirects.filter(site_id=site_id)
-            regular_expressions_redirects = list(
-                regex_redirects.order_by("fallback_redirect").values()
-            )
-            cache.set(
-                regex_cache_key,
-                regular_expressions_redirects,
-                DJANGO_REGEX_REDIRECTS_CACHE_TIMEOUT,
+            if redirect.source_url not in exact_urls:
+                continue
+            self.update_hit_count(redirect.entry_id)
+            target_redirect_url = self.get_redirect_to_page_or_url(redirect)
+            return (
+                self.HttpRedirect301302(request, target_redirect_url, redirect.permanent)
+                if target_redirect_url
+                else response
             )
 
+        regular_expressions_redirects = self._get_cached_redirects(
+            site_id=site_id,
+            regular_expression=True,
+        )
         for redirect in regular_expressions_redirects:
             try:
-                old_path = re.compile(redirect["url"], re.IGNORECASE)
+                old_path = re.compile(redirect.source_url, re.IGNORECASE)
             except re.error:
                 continue
             if old_path.match(full_path):
-                self.update_hit_count(redirect["id"])
+                self.update_hit_count(redirect.entry_id)
                 target_redirect_url = self.get_redirect_to_page_or_url(redirect)
                 if not target_redirect_url:
                     return response
                 new_path = target_redirect_url.replace("$", "\\")
                 replaced_path = re.sub(old_path, new_path, full_path)
-                return self.HttpRedirect301302(request, replaced_path, redirect["permanent"])
-            else:
-                pass
+                return self.HttpRedirect301302(request, replaced_path, redirect.permanent)
 
-        if (
-            response.status_code == 404
-            and site
-            and not PageNotFoundEntry.objects.filter(
-                site=site,
-                url__in=PageNotFoundEntry.build_url_variants(
-                    url,
-                    append_slash=bool(settings.APPEND_SLASH),
-                ),
-            ).exists()
-        ):
-            PageNotFoundEntry.objects.create(site=site, url=url, hits=1)
+        self._record_not_found(site, url)
         return response

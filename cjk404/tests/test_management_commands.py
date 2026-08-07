@@ -197,6 +197,23 @@ class ActivateBuiltinRedirectsCommandTests(BaseCjk404TestCase):
             self.assertEqual(entry.redirect_to_page_id, self.default_site.root_page_id)
             self.assertIsNone(entry.redirect_to_url)
 
+    def test_activation_invalidates_warmed_routing_caches(self) -> None:
+        self._import_builtins(self.default_site)
+        exact_cache_key = build_cache_key(
+            DJANGO_REGEX_REDIRECTS_CACHE_KEY,
+            self.default_site.id,
+        )
+        regex_cache_key = build_cache_key(
+            DJANGO_REGEX_REDIRECTS_CACHE_REGEX_KEY,
+            self.default_site.id,
+        )
+        cache.set(exact_cache_key, ["stale"], 300)
+        cache.set(regex_cache_key, ["stale"], 300)
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command("activate_builtin_redirects", site_id=self.default_site.id)
+        self.assertIsNone(cache.get(exact_cache_key))
+        self.assertIsNone(cache.get(regex_cache_key))
+
     def test_falls_back_to_root_url_when_root_page_missing(self) -> None:
         assert self.default_site is not None
         self._import_builtins(self.default_site)

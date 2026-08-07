@@ -12,6 +12,7 @@ from wagtail.models import Page
 from wagtail.models import Site
 
 from cjk404.builtin_redirects import BUILTIN_REDIRECTS
+from cjk404.cache import clear_redirect_caches
 from cjk404.models import PageNotFoundEntry
 
 SUCCESS = "\033[92m"
@@ -20,9 +21,7 @@ ENDC = "\033[0m"
 
 
 class Command(BaseCommand):
-    help = (
-        "Activate Imported Built-In Redirects"
-    )
+    help = "Activate Imported Built-In Redirects"
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(
@@ -70,19 +69,17 @@ class Command(BaseCommand):
         skipped_count = queryset.count() - updatable_qs.count()
         with transaction.atomic():
             updated_count = updatable_qs.update(**update_fields)
+        if updated_count:
+            transaction.on_commit(lambda: clear_redirect_caches(target_site.id))
         site_name = self._site_display_name(target_site)
-        self.stdout.write(
-            f"{SUCCESS}Activated {updated_count} Redirect(s) for {site_name}{ENDC}"
-        )
+        self.stdout.write(f"{SUCCESS}Activated {updated_count} Redirect(s) for {site_name}{ENDC}")
         if skipped_count:
             self.stdout.write(
                 f"{WARNING}Skipped {skipped_count} Redirect(s) with Defined for {site_name}{ENDC}"
             )
         return ""
 
-    def _resolve_site(
-        self, sites: Sequence[Site], site_id: Optional[int]
-    ) -> Optional[Site]:
+    def _resolve_site(self, sites: Sequence[Site], site_id: Optional[int]) -> Optional[Site]:
         if site_id is not None:
             matched_site = next((site for site in sites if site.id == site_id), None)
             if matched_site is None:

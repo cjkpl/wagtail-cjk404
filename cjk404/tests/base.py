@@ -15,7 +15,6 @@ from cjk404.models import PageNotFoundEntry
 
 
 class BaseCjk404TestCase(TestCase):
-
     def setUp(self) -> None:
         super().setUp()
         cache.clear()
@@ -30,7 +29,9 @@ class BaseCjk404TestCase(TestCase):
                 is_default_site=True,
             )
 
-    def create_site(self, hostname: str, *, is_default: bool = False, root_page: Optional[Page] = None) -> Site:
+    def create_site(
+        self, hostname: str, *, is_default: bool = False, root_page: Optional[Page] = None
+    ) -> Site:
         return Site.objects.create(
             hostname=hostname,
             root_page=root_page or self.root_page,
@@ -54,6 +55,7 @@ class BaseCjk404TestCase(TestCase):
         is_permanent: bool = False,
         is_regexp: bool = False,
         is_fallback: bool = False,
+        is_active: bool = True,
     ) -> PageNotFoundEntry:
         target_site = site or Site.objects.filter(is_default_site=True).first()
         assert target_site is not None, "A default Site is required for tests."
@@ -64,6 +66,7 @@ class BaseCjk404TestCase(TestCase):
             permanent=is_permanent,
             regular_expression=is_regexp,
             fallback_redirect=is_fallback,
+            is_active=is_active,
             site=target_site,
         )
 

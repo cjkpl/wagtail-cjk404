@@ -6,11 +6,11 @@ from unittest.mock import PropertyMock, patch
 from django.test import override_settings
 from wagtail.models import Site
 
+from cjk404.models import PageNotFoundEntry
 from cjk404.tests.base import BaseCjk404TestCase
 
 
 class RedirectTests(BaseCjk404TestCase):
-
     def redirect_url(
         self,
         requested_url: str,
@@ -167,6 +167,70 @@ class RedirectTests(BaseCjk404TestCase):
         self.redirect_url("/admin.php", "/admin-target/", 302, 404)
         specific_redirect.refresh_from_db()
         self.assertEqual(specific_redirect.hits, 1)
+
+    def test_inactive_exact_redirect_is_ignored(self) -> None:
+        redirect = self.create_redirect(
+            "/inactive-source/",
+            "/inactive-target/",
+            is_active=False,
+        )
+        response = self.client.get("/inactive-source/")
+        self.assertEqual(response.status_code, 404)
+        redirect.refresh_from_db()
+        self.assertEqual(redirect.hits, 0)
+
+    def test_inactive_regex_does_not_block_active_fallback(self) -> None:
+        inactive_redirect = self.create_redirect(
+            r"^/inactive-regex/(.*)/$",
+            r"/inactive-target/$1/",
+            is_regexp=True,
+            is_active=False,
+        )
+        active_redirect = self.create_redirect(
+            r"^/inactive-regex/(.*)/$",
+            r"/active-target/$1/",
+            is_regexp=True,
+            is_fallback=True,
+        )
+        self.redirect_url("/inactive-regex/example/", "/active-target/example/", 302, 404)
+        inactive_redirect.refresh_from_db()
+        active_redirect.refresh_from_db()
+        self.assertEqual(inactive_redirect.hits, 0)
+        self.assertEqual(active_redirect.hits, 1)
+
+    def test_logged_404_entry_does_not_block_active_regex(self) -> None:
+        site = Site.objects.filter(is_default_site=True).first()
+        assert site is not None
+        logged_404 = PageNotFoundEntry.objects.create(site=site, url="/previously-missing/")
+        regex_redirect = self.create_redirect(
+            r"^/previously-missing/$",
+            "/regex-target/",
+            site=site,
+            is_regexp=True,
+        )
+        self.redirect_url("/previously-missing/", "/regex-target/", 302, 404)
+        logged_404.refresh_from_db()
+        regex_redirect.refresh_from_db()
+        self.assertEqual(logged_404.hits, 0)
+        self.assertEqual(regex_redirect.hits, 1)
+
+    def test_exact_redirect_matches_full_path_with_query_string(self) -> None:
+        redirect = self.create_redirect(
+            "/query-source/?language=pl",
+            "/query-target/",
+        )
+        self.redirect_url("/query-source/?language=pl", "/query-target/", 302, 404)
+        redirect.refresh_from_db()
+        self.assertEqual(redirect.hits, 1)
+
+    def test_append_slash_is_inserted_before_query_string(self) -> None:
+        redirect = self.create_redirect(
+            "/slash-source/?language=pl",
+            "/slash-target/",
+        )
+        self.redirect_url("/slash-source?language=pl", "/slash-target/", 302, 404)
+        redirect.refresh_from_db()
+        self.assertEqual(redirect.hits, 1)
 
     @override_settings(CJK404_MAX_REQUEST_URL_LENGTH=1000)
     def test_overlong_url_returns_414_and_is_not_saved(self) -> None:

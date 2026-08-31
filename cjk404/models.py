@@ -272,7 +272,7 @@ class PageNotFoundEntry(models.Model):
             root_url = getattr(self.site, "root_url", None) or f"https://{hostname}"
         default_suffix = ""
         if getattr(self.site, "is_default_site", False):
-            default_suffix = format_html(
+            default_suffix = mark_safe(
                 ' <svg class="icon icon-pick default" aria-hidden="true" '
                 'style="width:1em;height:1em;vertical-align:text-bottom;color:#007D7E;">'
                 '<use href="#icon-pick"></use>'

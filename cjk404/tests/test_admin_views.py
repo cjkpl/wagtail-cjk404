@@ -18,6 +18,18 @@ from cjk404.models import PageNotFoundEntry
 from cjk404.tests.base import BaseCjk404TestCase
 
 
+class PageNotFoundEntryDisplayTests(BaseCjk404TestCase):
+    def test_website_display_renders_default_site_badge(self) -> None:
+        entry = PageNotFoundEntry(
+            site=Site.objects.get(is_default_site=True),
+            url="/missing/",
+        )
+
+        display = entry.website_display()
+
+        self.assertIn("Default Site", display)
+
+
 class ClearRedirectCacheViewTests(BaseCjk404TestCase):
     def setUp(self) -> None:
         super().setUp()

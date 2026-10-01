@@ -86,6 +86,71 @@ class PageNotFoundEntryIndexView(IndexView):
     table_class = SiteColorTable
 
     @cached_property
+    def list_display(self):
+        columns = ["__str__"]
+        if multiple_sites_exist():
+            columns.append(
+                Column(
+                    "website_display",
+                    label="Website",
+                    accessor="website_display",
+                    sort_key="site__site_name",
+                )
+            )
+        columns.extend(
+            [
+                Column(
+                    "redirect_to_target_link",
+                    label="Redirect to Page or URL",
+                    accessor=lambda obj: obj.redirect_to_target_link(),
+                ),
+                Column(
+                    "active_status_badge",
+                    label="Is Active?",
+                    accessor="active_status_badge",
+                    sort_key="is_active",
+                ),
+                Column("hits", label="Number of Views", sort_key="hits"),
+                BooleanColumn(
+                    "regular_expression",
+                    label="Regular Expression",
+                    sort_key="regular_expression",
+                ),
+                Column(
+                    "permanent_status_badge",
+                    label="Permanent",
+                    accessor="permanent_status_badge",
+                    sort_key="permanent",
+                ),
+                Column(
+                    "fallback_status_badge",
+                    label="Fallback",
+                    accessor="fallback_status_badge",
+                    sort_key="fallback_redirect",
+                ),
+                Column(
+                    "formatted_last_viewed",
+                    label="Last Accessed Date",
+                    accessor="formatted_last_viewed",
+                    sort_key="last_hit",
+                ),
+                Column(
+                    "formatted_created",
+                    label="Created Date",
+                    accessor="formatted_created",
+                    sort_key="created",
+                ),
+                Column(
+                    "formatted_updated_date",
+                    label="Updated Date",
+                    accessor="formatted_updated_date",
+                    sort_key="updated",
+                ),
+            ]
+        )
+        return tuple(columns)
+
+    @cached_property
     def _site_color_map(self) -> dict[int, str]:
         colors = ["#262626", "#201F1F", "#1C1A1A", "#161414"]
         mapping: dict[int, str] = {}
@@ -289,71 +354,3 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
     list_per_page = 15
     search_fields = ("url", "redirect_to_url")
     filterset_class = PageNotFoundEntryFilterSet
-
-    def _get_list_display(self):
-        columns = ["__str__"]
-        if multiple_sites_exist():
-            columns.append(
-                Column(
-                    "website_display",
-                    label="Website",
-                    accessor="website_display",
-                    sort_key="site__site_name",
-                )
-            )
-        columns.extend(
-            [
-                Column(
-                    "redirect_to_target_link",
-                    label="Redirect to Page or URL",
-                    accessor=lambda obj: obj.redirect_to_target_link(),
-                ),
-                Column(
-                    "active_status_badge",
-                    label="Is Active?",
-                    accessor="active_status_badge",
-                    sort_key="is_active",
-                ),
-                Column("hits", label="Number of Views", sort_key="hits"),
-                BooleanColumn(
-                    "regular_expression",
-                    label="Regular Expression",
-                    sort_key="regular_expression",
-                ),
-                Column(
-                    "permanent_status_badge",
-                    label="Permanent",
-                    accessor="permanent_status_badge",
-                    sort_key="permanent",
-                ),
-                Column(
-                    "fallback_status_badge",
-                    label="Fallback",
-                    accessor="fallback_status_badge",
-                    sort_key="fallback_redirect",
-                ),
-                Column(
-                    "formatted_last_viewed",
-                    label="Last Accessed Date",
-                    accessor="formatted_last_viewed",
-                    sort_key="last_hit",
-                ),
-                Column(
-                    "formatted_created",
-                    label="Created Date",
-                    accessor="formatted_created",
-                    sort_key="created",
-                ),
-                Column(
-                    "formatted_updated_date",
-                    label="Updated Date",
-                    accessor="formatted_updated_date",
-                    sort_key="updated",
-                ),
-            ]
-        )
-        return tuple(columns)
-
-    def get_index_view_kwargs(self, **kwargs):
-        kwargs["list_display"] = self._get_list_display()
-        return super().get_index_view_kwargs(**kwargs)

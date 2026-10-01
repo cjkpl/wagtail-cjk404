@@ -354,3 +354,10 @@ class PageNotFoundEntryViewSet(SnippetViewSet):
     list_per_page = 15
     search_fields = ("url", "redirect_to_url")
     filterset_class = PageNotFoundEntryFilterSet
+
+    def get_index_view_kwargs(self, **kwargs):
+        view_kwargs = super().get_index_view_kwargs(**kwargs)
+        # Let the view resolve its list_display per request. Wagtail 6.4 can
+        # otherwise pass the cached_property itself as a kwarg.
+        view_kwargs.pop("list_display", None)
+        return view_kwargs
